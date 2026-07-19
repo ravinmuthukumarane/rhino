@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-gray-900 border border-gray-800 rounded-xl p-4;
+  }
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-700 text-gray-200 font-medium px-4 py-2 rounded-lg transition-colors;
+  }
+  .input {
+    @apply bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent w-full;
+  }
+  .label {
+    @apply text-sm font-medium text-gray-400 mb-1 block;
+  }
+  .badge-warning {
+    @apply bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-critical {
+    @apply bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-info {
+    @apply bg-blue-500/20 text-blue-400 border border-blue-500/30 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+  .badge-success {
+    @apply bg-green-500/20 text-green-400 border border-green-500/30 text-xs font-medium px-2 py-0.5 rounded-full;
+  }
+}
+
+/* Light mode - only if dark class is NOT present */
+@media (prefers-color-scheme: light) {
+  html:not(.dark) {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  html:not(.dark) body {
+    @apply bg-gray-50 text-gray-900;
+  }
+
+  html:not(.dark) .card {
+    @apply bg-white border border-gray-200;
+  }
+
+  html:not(.dark) .btn-primary {
+    @apply bg-blue-600 hover:bg-blue-700;
+  }
+
+  html:not(.dark) .input {
+    @apply bg-white border border-gray-300 text-gray-900;
+  }
+}
