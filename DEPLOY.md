@@ -1,8 +1,14 @@
 # Production Deploy
 
 Images are built once from a temporary source checkout, then the source is
-deleted. The server keeps only `docker-compose.runtime.yml`, `.env`, and the
-named Docker volume for Postgres data — no application source tree.
+deleted. The server keeps only `docker-compose.runtime.yml` (as
+`docker-compose.yml`), `nginx.conf`, `.env`, and the named Docker volumes
+(Postgres data, Let's Encrypt certs) — no application source tree. Live at
+https://rhino.sentinel.lk, server `ems_admin@4.193.171.2`.
+
+`nginx.conf` is bind-mounted (not baked into the frontend image), so TLS/proxy
+config tweaks only need `scp` + `docker compose restart frontend` — never a
+rebuild.
 
 ## First deploy / rebuilding after code changes
 
@@ -22,6 +28,7 @@ after the first deploy these files rarely change):
 ```bash
 mkdir -p ~/rhino
 cp ~/rhino-src/docker-compose.runtime.yml ~/rhino/docker-compose.yml
+cp ~/rhino-src/frontend/nginx.conf ~/rhino/nginx.conf
 cp ~/rhino-src/.env ~/rhino/.env
 cd ~/rhino
 docker compose up -d
@@ -52,6 +59,31 @@ the frontend image the built static bundle, since that's what actually runs.
 Anyone with shell access to the server could extract an image's filesystem.
 This setup avoids a browsable/editable source tree and a stale dependency on
 it continuing to exist; it doesn't cryptographically hide the code.
+
+## HTTPS (Let's Encrypt) — bootstrap sequence for a new domain
+
+`nginx.conf` in the repo is the end state (redirects 80→443, serves TLS on
+443). It references cert files that won't exist on a brand-new domain, so
+deploying it directly crashes nginx. Bootstrap order:
+
+1. Deploy a temporary HTTP-only `nginx.conf` — same as the repo version's
+   port-80 server block, but serving the app directly (no redirect) plus the
+   `/.well-known/acme-challenge/` location. Confirm `http://<domain>/` works.
+2. Issue the cert against that running config:
+   ```bash
+   docker compose exec certbot certbot certonly --webroot -w /var/www/certbot \
+     -d <domain> --email <contact-email> --agree-tos --no-eff-email --non-interactive
+   ```
+3. Deploy the real `nginx.conf` (from the repo) and `docker compose restart frontend`.
+4. Update `FRONTEND_URL` in `.env` to `https://<domain>`, then `docker compose up -d`
+   (recreates only the backend, to pick up the new env var).
+
+Renewal is a systemd timer on the server (no cron available on this box):
+`/etc/systemd/system/rhino-cert-renew.{service,timer}`, daily, runs
+`certbot renew --webroot -w /var/www/certbot --quiet` then
+`nginx -s reload` in the frontend container. Check with
+`systemctl list-timers rhino-cert-renew.timer` and
+`journalctl -u rhino-cert-renew.service`.
 
 ## First-boot-only Postgres init
 
