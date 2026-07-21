@@ -7,7 +7,7 @@ import { emailService } from '../services/emailService';
 import { AuthRequest } from '../types';
 
 const makeToken = (userId: string) =>
-  jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' });
+  jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as jwt.SignOptions['expiresIn'] });
 
 export async function createUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { email, name, role } = req.body as { email: string; name: string; role?: string };

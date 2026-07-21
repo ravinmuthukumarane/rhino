@@ -17,24 +17,25 @@ let lastPowerSource: Record<string, PowerSource> = {};
 export async function startMQTT(io: Server): Promise<void> {
   const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
 
-  client = mqtt.connect(brokerUrl, {
+  const mqttClient = mqtt.connect(brokerUrl, {
     clientId: `rhino-backend-${Date.now()}`,
     clean: true,
     reconnectPeriod: 1000,
   });
+  client = mqttClient;
 
-  client.on('connect', () => {
+  mqttClient.on('connect', () => {
     console.log('[MQTT] Connected to broker:', brokerUrl);
     // Subscribe to energy and flow meter topics
-    client.subscribe('energy/+/data', (err) => {
+    mqttClient.subscribe('energy/+/data', (err) => {
       if (!err) console.log('[MQTT] Subscribed to energy/+/data');
     });
-    client.subscribe('diesel/+/data', (err) => {
+    mqttClient.subscribe('diesel/+/data', (err) => {
       if (!err) console.log('[MQTT] Subscribed to diesel/+/data');
     });
   });
 
-  client.on('message', async (topic: string, message: Buffer) => {
+  mqttClient.on('message', async (topic: string, message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
 
@@ -48,11 +49,11 @@ export async function startMQTT(io: Server): Promise<void> {
     }
   });
 
-  client.on('error', (err) => {
+  mqttClient.on('error', (err) => {
     console.error('[MQTT] Error:', err.message);
   });
 
-  client.on('disconnect', () => {
+  mqttClient.on('disconnect', () => {
     console.log('[MQTT] Disconnected from broker');
   });
 }

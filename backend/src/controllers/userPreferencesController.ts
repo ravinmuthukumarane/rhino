@@ -54,7 +54,8 @@ export async function updateUserPreferences(req: AuthRequest, res: Response, nex
         [req.user.id, theme ?? 'dark', alert_sound ?? true, email_notifications ?? true,
          email_daily_digest ?? true, alert_snooze_minutes ?? 60, timezone ?? 'UTC']
       );
-      return res.json({ preferences: newPrefs });
+      res.json({ preferences: newPrefs });
+      return;
     }
 
     res.json({ preferences: prefs });
