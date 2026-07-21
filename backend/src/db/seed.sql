@@ -26,3 +26,10 @@ ON CONFLICT (meter_id) DO NOTHING;
 INSERT INTO generators (generator_id, name, plant_id, capacity_kva, fuel_type)
 VALUES ('GEN-01', 'Diesel Generator 1', '00000000-0000-0000-0000-000000000001', 200.0, 'diesel')
 ON CONFLICT (generator_id) DO NOTHING;
+
+-- Default report schedules (daily off by default, monthly on to match prior behavior)
+INSERT INTO report_schedules (frequency, enabled, report_type, format)
+VALUES
+  ('daily',   false, 'consumption_summary', 'excel'),
+  ('monthly', true,  'consumption_summary', 'excel')
+ON CONFLICT (frequency) DO NOTHING;

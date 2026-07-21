@@ -9,33 +9,27 @@ import { AuthRequest } from '../types';
 const makeToken = (userId: string) =>
   jwt.sign({ userId }, process.env.JWT_SECRET!, { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' });
 
-export async function register(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { email, password, name } = req.body as { email: string; password: string; name: string };
+export async function createUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { email, name, role } = req.body as { email: string; name: string; role?: string };
   try {
     const existing = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
     if (existing.rows.length) { res.status(409).json({ error: 'Email already registered' }); return; }
 
-    const count = await pool.query('SELECT COUNT(*) FROM users');
-    const role = parseInt(count.rows[0].count) === 0 ? 'admin' : 'viewer';
-    const hash = await bcrypt.hash(password, 12);
-
-    const isVerified = !process.env.SMTP_USER;
+    // Unusable placeholder — the user sets their real password via the emailed invite link.
+    const placeholder = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 12);
     const { rows: [user] } = await pool.query(
-      'INSERT INTO users (email, password_hash, name, role, is_verified) VALUES ($1,$2,$3,$4,$5) RETURNING id, email, name, role',
-      [email, hash, name, role, isVerified]
+      'INSERT INTO users (email, password_hash, name, role, is_verified) VALUES ($1,$2,$3,$4,false) RETURNING id, email, name, role, is_verified, created_at',
+      [email, placeholder, name, role === 'admin' ? 'admin' : 'viewer']
     );
 
-    if (!isVerified) {
-      const token = crypto.randomBytes(32).toString('hex');
-      await pool.query(
-        'INSERT INTO email_verifications (user_id, token, expires_at) VALUES ($1,$2,$3)',
-        [user.id, token, new Date(Date.now() + 86400000)]
-      );
-      await emailService.sendVerification(email, name, token);
-      res.status(201).json({ message: 'Registration successful. Check your email to verify your account.' });
-    } else {
-      res.status(201).json({ message: 'Registration successful. You can now login.' });
-    }
+    const token = crypto.randomBytes(32).toString('hex');
+    await pool.query(
+      'INSERT INTO password_resets (user_id, token, expires_at) VALUES ($1,$2,$3)',
+      [user.id, token, new Date(Date.now() + 86400000)]
+    );
+    await emailService.sendInvite(email, name, token);
+
+    res.status(201).json({ user });
   } catch (err) { next(err); }
 }
 
@@ -89,7 +83,7 @@ export async function resetPassword(req: AuthRequest, res: Response, next: NextF
       'SELECT user_id FROM password_resets WHERE token=$1 AND used=false AND expires_at>NOW()', [token]
     );
     if (!row) { res.status(400).json({ error: 'Invalid or expired reset token' }); return; }
-    await pool.query('UPDATE users SET password_hash=$1 WHERE id=$2', [await bcrypt.hash(password, 12), row.user_id]);
+    await pool.query('UPDATE users SET password_hash=$1, is_verified=true WHERE id=$2', [await bcrypt.hash(password, 12), row.user_id]);
     await pool.query('UPDATE password_resets SET used=true WHERE token=$1', [token]);
     res.json({ message: 'Password reset successful' });
   } catch (err) { next(err); }

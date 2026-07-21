@@ -10,24 +10,21 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+function applyTheme(t: Theme) {
+  document.documentElement.classList.toggle('dark', t === 'dark');
+}
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [mounted, setMounted] = useState(false);
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme | null) ?? 'dark');
 
   useEffect(() => {
-    const saved = localStorage.getItem('theme') as Theme | null;
-    if (saved) {
-      setTheme(saved);
-      applyTheme(saved);
-    }
-    setMounted(true);
-  }, []);
+    applyTheme(theme);
+  }, [theme]);
 
   const toggleTheme = async () => {
     const newTheme: Theme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
     localStorage.setItem('theme', newTheme);
-    applyTheme(newTheme);
 
     try {
       await axios.put('/api/user/preferences', { theme: newTheme });
@@ -35,17 +32,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       console.error('Failed to save theme:', err);
     }
   };
-
-  const applyTheme = (t: Theme) => {
-    const html = document.documentElement;
-    if (t === 'light') {
-      html.classList.remove('dark');
-    } else {
-      html.classList.add('dark');
-    }
-  };
-
-  if (!mounted) return <>{children}</>;
 
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>

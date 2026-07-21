@@ -63,10 +63,10 @@ export default function AlertsPage() {
     <div className="space-y-5">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: 'Shown', value: alerts.length, color: 'text-gray-300' },
-          { label: 'Unacknowledged', value: unack, color: 'text-red-400' },
-          { label: 'Critical (30d)', value: stats.filter((s: any) => s.severity === 'critical').reduce((a: number, b: any) => a + +b.total, 0), color: 'text-red-400' },
-          { label: 'Warning (30d)', value: stats.filter((s: any) => s.severity === 'warning').reduce((a: number, b: any) => a + +b.total, 0), color: 'text-yellow-400' },
+          { label: 'Shown', value: alerts.length, color: 'text-gray-700 dark:text-gray-300' },
+          { label: 'Unacknowledged', value: unack, color: 'text-red-600 dark:text-red-400' },
+          { label: 'Critical (30d)', value: stats.filter((s: any) => s.severity === 'critical').reduce((a: number, b: any) => a + +b.total, 0), color: 'text-red-600 dark:text-red-400' },
+          { label: 'Warning (30d)', value: stats.filter((s: any) => s.severity === 'warning').reduce((a: number, b: any) => a + +b.total, 0), color: 'text-yellow-600 dark:text-yellow-400' },
         ].map(({ label, value, color }) => (
           <div key={label} className="card"><p className="text-xs text-gray-500">{label}</p><p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p></div>
         ))}
@@ -97,7 +97,7 @@ export default function AlertsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-800">
+              <tr className="border-b border-gray-200 dark:border-gray-800">
                 {['Time','Plant','Meter','Type','Severity','Message','Value','Setpoint','Status',''].map((h) => (
                   <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium whitespace-nowrap">{h}</th>
                 ))}
@@ -109,20 +109,20 @@ export default function AlertsPage() {
                 : alerts.length === 0
                 ? <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-500">No alerts found</td></tr>
                 : alerts.map((a) => (
-                  <tr key={a.id} className={`border-b border-gray-800/50 hover:bg-gray-800/20 transition-colors ${!a.acknowledged && a.severity === 'critical' ? 'bg-red-900/10' : ''}`}>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{fmt.datetime(a.created_at)}</td>
-                    <td className="px-4 py-2.5 text-gray-300 text-xs">{a.plant_name ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs">{a.meter_id ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-200 text-xs font-medium whitespace-nowrap">{a.alert_type.replace(/_/g,' ')}</td>
+                  <tr key={a.id} className={`border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors ${!a.acknowledged && a.severity === 'critical' ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">{fmt.datetime(a.created_at)}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 text-xs">{a.plant_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs">{a.meter_id ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-800 dark:text-gray-200 text-xs font-medium whitespace-nowrap">{a.alert_type.replace(/_/g,' ')}</td>
                     <td className="px-4 py-2.5"><span className={SEVERITY_CLS[a.severity] ?? 'badge-info'}>{a.severity}</span></td>
-                    <td className="px-4 py-2.5 text-gray-300 text-xs max-w-xs truncate">{a.message}</td>
-                    <td className="px-4 py-2.5 text-gray-300 text-xs whitespace-nowrap">{a.value ?? '—'}</td>
-                    <td className="px-4 py-2.5 text-gray-400 text-xs whitespace-nowrap">{a.setpoint_value ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 text-xs max-w-xs truncate">{a.message}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 text-xs whitespace-nowrap">{a.value ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">{a.setpoint_value ?? '—'}</td>
                     <td className="px-4 py-2.5">{a.acknowledged ? <span className="badge-success">Ack'd</span> : <span className="badge-warning">Open</span>}</td>
                     <td className="px-4 py-2.5">
                       {!a.acknowledged && (
                         <button onClick={() => ackOne.mutate(a.id)} disabled={ackOne.isPending}
-                          className="p-1 text-gray-500 hover:text-green-400 hover:bg-green-500/10 rounded transition-colors">
+                          className="p-1 text-gray-500 hover:text-green-600 dark:hover:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors">
                           <Check className="w-4 h-4" />
                         </button>
                       )}

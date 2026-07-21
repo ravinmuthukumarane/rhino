@@ -14,35 +14,35 @@ const MAX_LIVE = 30;
 
 function MetricCard({ label, value, unit, color = 'primary', sub }: { label: string; value: any; unit?: string; color?: string; sub?: string }) {
   const colors: Record<string, string> = {
-    primary: 'text-primary-300 border-primary-800/50 bg-primary-900/30',
-    green: 'text-green-300 border-green-800/40 bg-green-900/20',
-    yellow: 'text-yellow-300 border-yellow-800/40 bg-yellow-900/20',
-    red: 'text-red-300 border-red-800/40 bg-red-900/20',
-    blue: 'text-blue-300 border-blue-800/40 bg-blue-900/20',
-    purple: 'text-purple-300 border-purple-800/40 bg-purple-900/20',
-    orange: 'text-orange-300 border-orange-800/40 bg-orange-900/20',
-    cyan: 'text-cyan-300 border-cyan-800/40 bg-cyan-900/20',
+    primary: 'text-primary-700 dark:text-primary-300 border-primary-800/50 bg-primary-900/30',
+    green: 'text-green-700 dark:text-green-300 border-green-300 dark:border-green-800/40 bg-green-50 dark:bg-green-900/20',
+    yellow: 'text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-800/40 bg-yellow-50 dark:bg-yellow-900/20',
+    red: 'text-red-700 dark:text-red-300 border-red-300 dark:border-red-800/40 bg-red-50 dark:bg-red-900/20',
+    blue: 'text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800/40 bg-blue-50 dark:bg-blue-900/20',
+    purple: 'text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800/40 bg-purple-50 dark:bg-purple-900/20',
+    orange: 'text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-800/40 bg-orange-50 dark:bg-orange-900/20',
+    cyan: 'text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800/40 bg-cyan-50 dark:bg-cyan-900/20',
   };
   const cls = colors[color] ?? colors.primary;
   return (
     <div className={`border rounded-xl p-3 ${cls}`}>
       <p className="text-xs text-gray-500 mb-1 uppercase tracking-wider font-medium">{label}</p>
-      <p className="text-xl font-bold leading-tight">{value ?? '—'}{unit && <span className="text-sm font-normal text-gray-400 ml-1">{unit}</span>}</p>
+      <p className="text-xl font-bold leading-tight">{value ?? '—'}{unit && <span className="text-sm font-normal text-gray-600 dark:text-gray-400 ml-1">{unit}</span>}</p>
       {sub && <p className="text-xs text-gray-500 mt-1">{sub}</p>}
     </div>
   );
 }
 
 const TT = ({ active, payload, label }: any) => active && payload?.length
-  ? <div className="bg-gray-800 border border-gray-700 rounded-lg p-2 text-xs"><p className="text-gray-300 mb-1">{label}</p>{payload.map((p: any) => <div key={p.name} className="flex items-center gap-1.5 mb-0.5"><div className="w-2 h-2 rounded-full" style={{ background: p.color }} /><span className="text-gray-400">{p.name}:</span><span className="text-gray-100 font-medium">{p.value}</span></div>)}</div>
+  ? <div className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-2 text-xs"><p className="text-gray-700 dark:text-gray-300 mb-1">{label}</p>{payload.map((p: any) => <div key={p.name} className="flex items-center gap-1.5 mb-0.5"><div className="w-2 h-2 rounded-full" style={{ background: p.color }} /><span className="text-gray-600 dark:text-gray-400">{p.name}:</span><span className="text-gray-900 dark:text-gray-100 font-medium">{p.value}</span></div>)}</div>
   : null;
 
 export default function DashboardPage() {
   const { liveReadings, activeAlerts } = useSocket();
   const { selectedPlantId } = usePlant();
   const [liveHistory, setLiveHistory] = useState<any[]>([]);
-  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('voltage');
-  const [consumPeriod, setConsumPeriod] = useState<'daily'|'monthly'|'yearly'>('daily');
+  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
+  const [consumPeriod, setConsumPeriod] = useState<'daily'|'monthly'|'yearly'>('monthly');
 
   // Use first matching plant reading or first available
   const reading = selectedPlantId
@@ -137,9 +137,9 @@ export default function DashboardPage() {
     <div className="space-y-5">
       {/* Critical alert banner */}
       {unack > 0 && (
-        <div className="bg-red-900/30 border border-red-700/50 rounded-xl px-4 py-3 flex items-center gap-3">
-          <Zap className="w-4 h-4 text-red-400 animate-pulse flex-shrink-0" />
-          <p className="text-sm text-red-300 font-medium">{unack} unacknowledged alert{unack > 1 ? 's' : ''} — check Alerts page</p>
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-700/50 rounded-xl px-4 py-3 flex items-center gap-3">
+          <Zap className="w-4 h-4 text-red-600 dark:text-red-400 animate-pulse flex-shrink-0" />
+          <p className="text-sm text-red-700 dark:text-red-300 font-medium">{unack} unacknowledged alert{unack > 1 ? 's' : ''} — check Alerts page</p>
         </div>
       )}
 
@@ -153,23 +153,102 @@ export default function DashboardPage() {
 
       {/* Power source indicator */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${isCEB ? 'bg-green-900/20 border-green-700/40' : 'bg-gray-800/30 border-gray-700/30'}`}>
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isCEB ? 'bg-green-800/60' : 'bg-gray-800'}`}>
-            <Zap className={`w-5 h-5 ${isCEB ? 'text-green-300' : 'text-gray-500'}`} />
+        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${isCEB ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isCEB ? 'bg-green-50 dark:bg-green-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+            <Zap className={`w-5 h-5 ${isCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`} />
           </div>
           <div>
-            <p className={`font-semibold text-sm ${isCEB ? 'text-green-300' : 'text-gray-500'}`}>CEB {isCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
+            <p className={`font-semibold text-sm ${isCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>CEB {isCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
             <p className="text-xs text-gray-500">Grid Supply</p>
           </div>
         </div>
-        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!isCEB ? 'bg-orange-900/20 border-orange-700/40' : 'bg-gray-800/30 border-gray-700/30'}`}>
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!isCEB ? 'bg-orange-800/60' : 'bg-gray-800'}`}>
-            <Cpu className={`w-5 h-5 ${!isCEB ? 'text-orange-300' : 'text-gray-500'}`} />
+        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!isCEB ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!isCEB ? 'bg-orange-50 dark:bg-orange-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+            <Cpu className={`w-5 h-5 ${!isCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`} />
           </div>
           <div>
-            <p className={`font-semibold text-sm ${!isCEB ? 'text-orange-300' : 'text-gray-500'}`}>Generator {gen?.status === 'ON' && !isCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
+            <p className={`font-semibold text-sm ${!isCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`}>Generator {gen?.status === 'ON' && !isCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
             <p className="text-xs text-gray-500">{gen?.status ?? 'STANDBY'} — {gen?.generator_id ?? '—'}</p>
           </div>
+        </div>
+      </div>
+
+      {/* Live trend chart */}
+      <div className="card">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Live Trend</p>
+          <div className="flex flex-wrap gap-1 ml-2">
+            {(['voltage','current','power','pf','harmonic'] as const).map((m) => (
+              <button key={m} onClick={() => setLiveMetric(m)}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${liveMetric === m ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                {m === 'harmonic' ? '3rd Harmonic' : m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {liveHistory.length === 0
+          ? <div className="h-48 flex items-center justify-center text-gray-600 text-sm">Waiting for live data…</div>
+          : <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={liveHistory} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <Tooltip content={<TT />} />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
+                {(liveLines[liveMetric] ?? []).map(({ key, color }) => (
+                  <Line key={key} type="monotone" dataKey={key} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+        }
+      </div>
+
+      {/* Consumption charts */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {/* Energy consumption */}
+        <div className="card">
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Zap className="w-4 h-4 text-primary-600 dark:text-primary-400" />Energy Consumption (kWh)</p>
+            <div className="flex gap-1 ml-auto">
+              {(['daily','monthly','yearly'] as const).map((p) => (
+                <button key={p} onClick={() => setConsumPeriod(p)}
+                  className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${consumPeriod === p ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                  {p.charAt(0).toUpperCase() + p.slice(1)}
+                </button>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={consumChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <Tooltip content={<TT />} />
+              <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
+              <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
+              <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
+              {consumPeriod !== 'yearly' && <>
+                <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
+                <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
+                <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
+              </>}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Diesel consumption */}
+        <div className="card">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2"><Droplets className="w-4 h-4 text-orange-600 dark:text-orange-400" />Diesel Consumption (Litres)</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={dieselChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+              <Tooltip content={<TT />} />
+              <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
+              <Area type="monotone" dataKey="Liters" stroke="#f97316" fill="#f9731620" strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
@@ -202,85 +281,6 @@ export default function DashboardPage() {
           <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
           <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
           <MetricCard label="Flow Rate" value={d ? parseFloat(String(d.flow_rate)).toFixed(2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
-        </div>
-      </div>
-
-      {/* Live trend chart */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <p className="text-sm font-semibold text-gray-200">Live Trend</p>
-          <div className="flex flex-wrap gap-1 ml-2">
-            {(['voltage','current','power','pf','harmonic'] as const).map((m) => (
-              <button key={m} onClick={() => setLiveMetric(m)}
-                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${liveMetric === m ? 'bg-primary-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>
-                {m === 'harmonic' ? '3rd Harmonic' : m.charAt(0).toUpperCase() + m.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-        {liveHistory.length === 0
-          ? <div className="h-48 flex items-center justify-center text-gray-600 text-sm">Waiting for live data…</div>
-          : <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={liveHistory} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                <Tooltip content={<TT />} />
-                <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
-                {(liveLines[liveMetric] ?? []).map(({ key, color }) => (
-                  <Line key={key} type="monotone" dataKey={key} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-        }
-      </div>
-
-      {/* Consumption charts */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-        {/* Energy consumption */}
-        <div className="card">
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <p className="text-sm font-semibold text-gray-200 flex items-center gap-2"><Zap className="w-4 h-4 text-primary-400" />Energy Consumption (kWh)</p>
-            <div className="flex gap-1 ml-auto">
-              {(['daily','monthly','yearly'] as const).map((p) => (
-                <button key={p} onClick={() => setConsumPeriod(p)}
-                  className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${consumPeriod === p ? 'bg-primary-700 text-white' : 'text-gray-400 hover:bg-gray-800'}`}>
-                  {p.charAt(0).toUpperCase() + p.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={consumChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <Tooltip content={<TT />} />
-              <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
-              <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
-              <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
-              {consumPeriod !== 'yearly' && <>
-                <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
-                <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
-                <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
-              </>}
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Diesel consumption */}
-        <div className="card">
-          <p className="text-sm font-semibold text-gray-200 mb-4 flex items-center gap-2"><Droplets className="w-4 h-4 text-orange-400" />Diesel Consumption (Litres)</p>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={dieselChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-              <Tooltip content={<TT />} />
-              <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
-              <Area type="monotone" dataKey="Liters" stroke="#f97316" fill="#f9731620" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
         </div>
       </div>
     </div>

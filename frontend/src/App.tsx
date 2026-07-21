@@ -6,7 +6,6 @@ import { PlantProvider } from './context/PlantContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Layout from './components/layout/Layout';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -35,7 +34,6 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Public><LoginPage /></Public>} />
-      <Route path="/register" element={<Public><RegisterPage /></Public>} />
       <Route path="/verify-email/:token" element={<VerifyEmailPage />} />
       <Route path="/forgot-password" element={<Public><ForgotPasswordPage /></Public>} />
       <Route path="/reset-password/:token" element={<Public><ResetPasswordPage /></Public>} />

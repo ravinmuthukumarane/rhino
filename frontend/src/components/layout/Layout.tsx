@@ -8,7 +8,7 @@ import { settingsApi } from '../../services/api';
 import type { Plant } from '../../types';
 
 export default function Layout() {
-  const { setPlants } = usePlant();
+  const { setPlants, selectedPlantId, setSelectedPlantId } = usePlant();
 
   const { data } = useQuery({
     queryKey: ['plants'],
@@ -16,11 +16,17 @@ export default function Layout() {
   });
 
   useEffect(() => {
-    if (data?.plants) setPlants(data.plants as Plant[]);
-  }, [data, setPlants]);
+    const plants = data?.plants as Plant[] | undefined;
+    if (!plants) return;
+    setPlants(plants);
+    if (!selectedPlantId) {
+      const defaultPlant = plants.find((p) => p.name === 'RRPL') ?? plants[0];
+      if (defaultPlant) setSelectedPlantId(defaultPlant.id);
+    }
+  }, [data, setPlants, selectedPlantId, setSelectedPlantId]);
 
   return (
-    <div className="flex h-screen overflow-hidden bg-gray-950">
+    <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <Header />

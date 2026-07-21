@@ -21,7 +21,7 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 px-4">
       <form onSubmit={handleSubmit} className="card max-w-md w-full space-y-4">
         <h2 className="text-xl font-bold text-white">New Password</h2>
         <div><label className="label">Password</label><input type="password" className="input" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required /></div>

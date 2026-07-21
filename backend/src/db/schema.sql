@@ -268,6 +268,20 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 -- ============================================================
+-- REPORT SCHEDULES (configurable auto-email daily/monthly report)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS report_schedules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  frequency VARCHAR(20) UNIQUE NOT NULL CHECK (frequency IN ('daily', 'monthly')),
+  enabled BOOLEAN DEFAULT true,
+  report_type VARCHAR(50) NOT NULL DEFAULT 'consumption_summary',
+  format VARCHAR(20) NOT NULL DEFAULT 'excel' CHECK (format IN ('excel', 'pdf')),
+  plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
+  updated_by UUID REFERENCES users(id),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
 -- TRIGGERS
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()

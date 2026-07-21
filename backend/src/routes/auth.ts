@@ -11,12 +11,6 @@ const validate = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-router.post('/register',
-  body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 8 }),
-  body('name').trim().notEmpty(),
-  validate, auth.register);
-
 router.get('/verify/:token', auth.verifyEmail);
 
 router.post('/login',
@@ -30,6 +24,12 @@ router.post('/reset-password',
 
 router.get('/me', authenticate, auth.getProfile);
 router.get('/users', authenticate, requireAdmin, auth.listUsers);
+router.post('/users',
+  authenticate, requireAdmin,
+  body('email').isEmail().normalizeEmail(),
+  body('name').trim().notEmpty(),
+  body('role').optional().isIn(['admin', 'viewer']),
+  validate, auth.createUser);
 router.put('/users/:userId/role', authenticate, requireAdmin, auth.updateUserRole);
 
 export default router;

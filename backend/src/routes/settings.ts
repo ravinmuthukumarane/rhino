@@ -15,15 +15,18 @@ router.delete('/plants/:id', requireAdmin, sc.deletePlant);
 router.get('/energy-meters', sc.getEnergyMeters);
 router.post('/energy-meters', requireAdmin, sc.createEnergyMeter);
 router.put('/energy-meters/:id', requireAdmin, sc.updateEnergyMeter);
+router.delete('/energy-meters/:id', requireAdmin, sc.deleteEnergyMeter);
 
 // Flow Meters
 router.get('/flow-meters', sc.getFlowMeters);
 router.post('/flow-meters', requireAdmin, sc.createFlowMeter);
 router.put('/flow-meters/:id', requireAdmin, sc.updateFlowMeter);
+router.delete('/flow-meters/:id', requireAdmin, sc.deleteFlowMeter);
 
 // Generators
 router.get('/generators', sc.getGenerators);
 router.post('/generators', requireAdmin, sc.createGenerator);
 router.put('/generators/:id', requireAdmin, sc.updateGenerator);
+router.delete('/generators/:id', requireAdmin, sc.deleteGenerator);
 
 export default router;

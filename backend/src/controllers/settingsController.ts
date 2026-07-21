@@ -85,6 +85,14 @@ export async function updateEnergyMeter(req: AuthRequest, res: Response, next: N
   } catch (err) { next(err); }
 }
 
+export async function deleteEnergyMeter(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM energy_meters WHERE id=$1', [id]);
+    res.json({ message: 'Energy meter deleted' });
+  } catch (err) { next(err); }
+}
+
 // ── Flow Meters ─────────────────────────────────────────────
 
 export async function getFlowMeters(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -121,6 +129,14 @@ export async function updateFlowMeter(req: AuthRequest, res: Response, next: Nex
   } catch (err) { next(err); }
 }
 
+export async function deleteFlowMeter(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM flow_meters WHERE id=$1', [id]);
+    res.json({ message: 'Flow meter deleted' });
+  } catch (err) { next(err); }
+}
+
 // ── Generators ──────────────────────────────────────────────
 
 export async function getGenerators(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -154,5 +170,13 @@ export async function updateGenerator(req: AuthRequest, res: Response, next: Nex
     );
     if (!gen) { res.status(404).json({ error: 'Generator not found' }); return; }
     res.json({ generator: gen });
+  } catch (err) { next(err); }
+}
+
+export async function deleteGenerator(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM generators WHERE id=$1', [id]);
+    res.json({ message: 'Generator deleted' });
   } catch (err) { next(err); }
 }

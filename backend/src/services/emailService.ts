@@ -19,6 +19,16 @@ async function sendVerification(email: string, name: string, token: string): Pro
     </div>`);
 }
 
+async function sendInvite(email: string, name: string, token: string): Promise<void> {
+  await send(email, "You're Invited – Energy Monitor", `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <h2 style="color:#1e40af">Energy Monitoring System</h2>
+      <p>Hello ${name}, an administrator has created an account for you.</p>
+      <a href="${UI}/reset-password/${token}" style="display:inline-block;padding:12px 24px;background:#1e40af;color:#fff;text-decoration:none;border-radius:6px;margin:16px 0">Set Your Password</a>
+      <p style="color:#6b7280;font-size:13px">This link expires in 24 hours.</p>
+    </div>`);
+}
+
 async function sendPasswordReset(email: string, name: string, token: string): Promise<void> {
   await send(email, 'Password Reset – Energy Monitor', `
     <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
@@ -46,14 +56,17 @@ async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
     </div>`);
 }
 
-async function sendMonthlyReport(emails: string[], reportName: string, buffer: Buffer): Promise<void> {
-  if (!process.env.SMTP_USER) { console.log('[EMAIL SKIPPED] Monthly report — no SMTP'); return; }
+async function sendScheduledReport(
+  emails: string[], frequency: 'daily' | 'monthly', reportLabel: string, periodLabel: string,
+  buffer: Buffer, filename: string, contentType: string
+): Promise<void> {
+  if (!process.env.SMTP_USER) { console.log(`[EMAIL SKIPPED] ${frequency} report — no SMTP`); return; }
   await transporter.sendMail({
     from: FROM, to: emails.join(','),
-    subject: `Monthly Report – ${reportName} – Energy Monitor`,
-    html: `<p>Please find the attached monthly energy & diesel consumption report for <b>${reportName}</b>.</p>`,
-    attachments: [{ filename: `${reportName}.xlsx`, content: buffer, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }],
+    subject: `${frequency === 'daily' ? 'Daily' : 'Monthly'} Report – ${reportLabel} – Energy Monitor`,
+    html: `<p>Please find the attached ${frequency} <b>${reportLabel}</b> report for <b>${periodLabel}</b>.</p>`,
+    attachments: [{ filename, content: buffer, contentType }],
   });
 }
 
-export const emailService = { sendVerification, sendPasswordReset, sendAlert, sendMonthlyReport };
+export const emailService = { sendVerification, sendInvite, sendPasswordReset, sendAlert, sendScheduledReport };

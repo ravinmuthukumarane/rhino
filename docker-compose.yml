@@ -2,21 +2,27 @@ version: '3.9'
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: rhino-postgres
     environment:
       POSTGRES_DB: rhino
       POSTGRES_USER: rhinoadminuser
-      POSTGRES_PASSWORD: rhinosecpass951
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Postgres runs everything in /docker-entrypoint-initdb.d/ once, in filename
+      # order, only when the data volume is empty (first boot on a fresh server).
+      - ./backend/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./backend/src/db/timescale.sql:/docker-entrypoint-initdb.d/02_timescale.sql:ro
+      - ./backend/src/db/seed.sql:/docker-entrypoint-initdb.d/03_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rhinoadminuser"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
   backend:
     build:
@@ -32,17 +38,22 @@ services:
       DB_PORT: 5432
       DB_NAME: rhino
       DB_USER: rhinoadminuser
-      DB_PASSWORD: rhinosecpass951
-      JWT_SECRET: your_jwt_secret_change_me
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 7d
+      FRONTEND_URL: ${FRONTEND_URL}
       SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT}
+      SMTP_SECURE: ${SMTP_SECURE}
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
-      SMTP_FROM: ${SMTP_FROM}
+      EMAIL_FROM: ${EMAIL_FROM}
       ENABLE_SIMULATOR: "true"
+      SIMULATOR_INTERVAL_MS: 5000
+      ENABLE_MQTT: "false"
       ENABLE_SCHEDULER: "true"
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     restart: unless-stopped
 
   frontend:
@@ -52,10 +63,8 @@ services:
     container_name: rhino-frontend
     depends_on:
       - backend
-    environment:
-      VITE_API_URL: http://localhost:5000/api
     ports:
-      - "3000:3000"
+      - "80:80"
     restart: unless-stopped
 
 volumes:

@@ -23,8 +23,8 @@ export default function TariffReportPage() {
   return (
     <div className="space-y-5">
       <div className="card">
-        <h3 className="font-semibold text-gray-200 flex items-center gap-2 mb-1">📊 Tariff Report</h3>
-        <p className="text-sm text-gray-400">Energy consumption breakdown by time period (Day/Peak/Off-Peak)</p>
+        <h3 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 mb-1">📊 Tariff Report</h3>
+        <p className="text-sm text-gray-600 dark:text-gray-400">Energy consumption breakdown by time period (Day/Peak/Off-Peak)</p>
       </div>
 
       <div className="card grid grid-cols-4 gap-4">
@@ -51,35 +51,35 @@ export default function TariffReportPage() {
       </div>
 
       {isLoading ? (
-        <div className="card text-center py-8 text-gray-400">Loading...</div>
+        <div className="card text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
       ) : data ? (
         <>
           {/* Plant Summary */}
           {data.plant_total && (
             <div className="grid grid-cols-5 gap-3">
               <div className="card">
-                <p className="text-xs text-gray-400">Day</p>
-                <p className="text-2xl font-bold text-blue-400">{parseFloat(data.plant_total.day_kwh).toFixed(0)}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Day</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{parseFloat(data.plant_total.day_kwh).toFixed(0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
-                <p className="text-xs text-gray-400">Peak</p>
-                <p className="text-2xl font-bold text-red-400">{parseFloat(data.plant_total.peak_kwh).toFixed(0)}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Peak</p>
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{parseFloat(data.plant_total.peak_kwh).toFixed(0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
-                <p className="text-xs text-gray-400">Off-Peak</p>
-                <p className="text-2xl font-bold text-green-400">{parseFloat(data.plant_total.offpeak_kwh).toFixed(0)}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Off-Peak</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{parseFloat(data.plant_total.offpeak_kwh).toFixed(0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
-                <p className="text-xs text-gray-400">Total</p>
-                <p className="text-2xl font-bold text-gray-200">{parseFloat(data.plant_total.total_kwh).toFixed(0)}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Total</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-gray-200">{parseFloat(data.plant_total.total_kwh).toFixed(0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
-                <p className="text-xs text-gray-400">Max KVA</p>
-                <p className="text-2xl font-bold text-yellow-400">{parseFloat(data.plant_total.max_kva).toFixed(1)}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">Max KVA</p>
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{parseFloat(data.plant_total.max_kva).toFixed(1)}</p>
                 <p className="text-xs text-gray-500">kVA</p>
               </div>
             </div>
@@ -87,7 +87,7 @@ export default function TariffReportPage() {
 
           {/* Bar Chart */}
           <div className="card">
-            <h4 className="font-semibold text-gray-200 mb-4">Consumption by Period</h4>
+            <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-4">Consumption by Period</h4>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={data.metrics}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -104,7 +104,7 @@ export default function TariffReportPage() {
 
           {/* Max KVA Chart */}
           <div className="card">
-            <h4 className="font-semibold text-gray-200 mb-4">Peak Demand (Max KVA)</h4>
+            <h4 className="font-semibold text-gray-800 dark:text-gray-200 mb-4">Peak Demand (Max KVA)</h4>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={data.metrics}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -121,7 +121,7 @@ export default function TariffReportPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-800">
+                  <tr className="border-b border-gray-200 dark:border-gray-800">
                     {['Meter', 'Day (kWh)', 'Peak (kWh)', 'Off-Peak (kWh)', 'Total (kWh)', 'Max KVA', 'Avg PF'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium">{h}</th>
                     ))}
@@ -129,12 +129,12 @@ export default function TariffReportPage() {
                 </thead>
                 <tbody>
                   {data.metrics?.map((m: any) => (
-                    <tr key={m.meter_id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                      <td className="px-4 py-3 text-gray-200">{m.meter_name}</td>
+                    <tr key={m.meter_id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{m.meter_name}</td>
                       <td className="px-4 py-3">{parseFloat(m.day_kwh).toFixed(1)}</td>
                       <td className="px-4 py-3">{parseFloat(m.peak_kwh).toFixed(1)}</td>
                       <td className="px-4 py-3">{parseFloat(m.offpeak_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3 font-bold text-blue-400">{parseFloat(m.total_kwh).toFixed(1)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{parseFloat(m.total_kwh).toFixed(1)}</td>
                       <td className="px-4 py-3">{parseFloat(m.max_kva_day).toFixed(1)}</td>
                       <td className="px-4 py-3">{parseFloat(m.avg_pf).toFixed(3)}</td>
                     </tr>

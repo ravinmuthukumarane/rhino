@@ -144,14 +144,19 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
     doc.moveDown();
     const sheet = wb.getWorksheet(1);
     if (sheet) {
+      const left = doc.page.margins.left;
+      const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const pageBottom = doc.page.height - doc.page.margins.bottom;
+      const colCount = sheet.getRow(1).actualCellCount || sheet.columnCount;
+      const colWidth = usableWidth / Math.max(colCount, 1);
       let y = doc.y;
       sheet.eachRow((row, rn) => {
-        if (y > 530) { doc.addPage(); y = 40; }
+        if (y > pageBottom - 20) { doc.addPage(); y = doc.page.margins.top; }
         doc.fillColor(rn === 1 ? '#1e40af' : '#111827').fontSize(7);
-        let x = 40;
+        let x = left;
         row.eachCell({ includeEmpty: true }, (cell) => {
-          doc.text(String(cell.value ?? ''), x, y, { width: 68, ellipsis: true });
-          x += 70;
+          doc.text(String(cell.value ?? ''), x, y, { width: colWidth - 4, ellipsis: true });
+          x += colWidth;
         });
         y += 14;
       });

@@ -113,23 +113,23 @@ export default function DeviceSetpointsTab() {
           </div>
 
           {setpoints?.setpoints && (
-            <div className="overflow-hidden border border-gray-800 rounded-lg">
+            <div className="overflow-hidden border border-gray-200 dark:border-gray-800 rounded-lg">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-800 bg-gray-800/50">
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Alert Type</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Min Value</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Max Value</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Enabled</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Email</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Source</th>
-                    <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Action</th>
+                  <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Alert Type</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Min Value</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Max Value</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Enabled</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Email</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Source</th>
+                    <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {setpoints.setpoints.map((sp: any) => (
-                    <tr key={sp.id} className="border-b border-gray-800/50 hover:bg-gray-800/20">
-                      <td className="px-4 py-3 text-gray-200 font-medium">{sp.alert_type.replace(/_/g, ' ')}</td>
+                    <tr key={sp.id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
+                      <td className="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{sp.alert_type.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3">
                         {editingId === sp.id && sp.source === 'device' ? (
                           <input
@@ -140,7 +140,7 @@ export default function DeviceSetpointsTab() {
                             onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], min_value: e.target.value } })}
                           />
                         ) : (
-                          <span className="text-gray-400">{sp.min_value ?? '—'}</span>
+                          <span className="text-gray-600 dark:text-gray-400">{sp.min_value ?? '—'}</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -153,7 +153,7 @@ export default function DeviceSetpointsTab() {
                             onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], max_value: e.target.value } })}
                           />
                         ) : (
-                          <span className="text-gray-400">{sp.max_value ?? '—'}</span>
+                          <span className="text-gray-600 dark:text-gray-400">{sp.max_value ?? '—'}</span>
                         )}
                       </td>
                       <td className="px-4 py-3">
@@ -191,7 +191,7 @@ export default function DeviceSetpointsTab() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-xs">
-                        <span className={sp.source === 'device' ? 'text-yellow-400 font-medium' : 'text-gray-500'}>
+                        <span className={sp.source === 'device' ? 'text-yellow-600 dark:text-yellow-400 font-medium' : 'text-gray-500'}>
                           {sp.source === 'device' ? '🔧 Device' : '🌍 Global'}
                         </span>
                       </td>
@@ -202,7 +202,7 @@ export default function DeviceSetpointsTab() {
                               <>
                                 <button
                                   onClick={() => handleSave(sp)}
-                                  className="text-green-400 hover:underline text-xs font-medium"
+                                  className="text-green-600 dark:text-green-400 hover:underline text-xs font-medium"
                                 >
                                   Save
                                 </button>
@@ -217,13 +217,13 @@ export default function DeviceSetpointsTab() {
                               <>
                                 <button
                                   onClick={() => setEditingId(sp.id)}
-                                  className="text-blue-400 hover:underline text-xs"
+                                  className="text-blue-600 dark:text-blue-400 hover:underline text-xs"
                                 >
                                   Edit
                                 </button>
                                 <button
                                   onClick={() => deleteMutation.mutate(sp.id)}
-                                  className="text-red-400 hover:underline text-xs"
+                                  className="text-red-600 dark:text-red-400 hover:underline text-xs"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
@@ -239,9 +239,9 @@ export default function DeviceSetpointsTab() {
             </div>
           )}
 
-          <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-3 text-sm text-blue-300">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700/30 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300">
             <p className="font-medium mb-1">💡 How Device Setpoints Work</p>
-            <ul className="text-xs space-y-1 text-blue-200">
+            <ul className="text-xs space-y-1 text-blue-800 dark:text-blue-200">
               <li>🔧 <strong>Device overrides</strong> are meter-specific thresholds that override global setpoints</li>
               <li>🌍 <strong>Global setpoints</strong> apply to all meters that don't have device overrides</li>
               <li>Example: Set stricter voltage limits for critical equipment, relaxed for less critical areas</li>

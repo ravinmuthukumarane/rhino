@@ -21,13 +21,13 @@ api.interceptors.response.use(
 );
 
 export const authApi = {
-  register: (data: object) => api.post('/auth/register', data),
   login: (data: object) => api.post('/auth/login', data),
   verifyEmail: (token: string) => api.get(`/auth/verify/${token}`),
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
   resetPassword: (data: object) => api.post('/auth/reset-password', data),
   getProfile: () => api.get('/auth/me'),
   listUsers: () => api.get('/auth/users'),
+  createUser: (data: object) => api.post('/auth/users', data),
   updateUserRole: (userId: string, role: string) => api.put(`/auth/users/${userId}/role`, { role }),
 };
 
@@ -56,6 +56,8 @@ export const alertsApi = {
 export const reportsApi = {
   generate: (data: object) => api.post('/reports/generate', data, { responseType: 'blob' }),
   getHistory: () => api.get('/reports/history'),
+  getSchedules: () => api.get('/reports/schedules'),
+  updateSchedule: (frequency: string, data: object) => api.put(`/reports/schedules/${frequency}`, data),
 };
 
 export const settingsApi = {
@@ -66,12 +68,15 @@ export const settingsApi = {
   getEnergyMeters: () => api.get('/settings/energy-meters'),
   createEnergyMeter: (data: object) => api.post('/settings/energy-meters', data),
   updateEnergyMeter: (id: string, data: object) => api.put(`/settings/energy-meters/${id}`, data),
+  deleteEnergyMeter: (id: string) => api.delete(`/settings/energy-meters/${id}`),
   getFlowMeters: () => api.get('/settings/flow-meters'),
   createFlowMeter: (data: object) => api.post('/settings/flow-meters', data),
   updateFlowMeter: (id: string, data: object) => api.put(`/settings/flow-meters/${id}`, data),
+  deleteFlowMeter: (id: string) => api.delete(`/settings/flow-meters/${id}`),
   getGenerators: () => api.get('/settings/generators'),
   createGenerator: (data: object) => api.post('/settings/generators', data),
   updateGenerator: (id: string, data: object) => api.put(`/settings/generators/${id}`, data),
+  deleteGenerator: (id: string) => api.delete(`/settings/generators/${id}`),
 };
 
 export function downloadBlob(blob: Blob, filename: string): void {

@@ -3,34 +3,58 @@ import pool from '../config/database';
 import { reportService } from './reportService';
 import { emailService } from './emailService';
 
+const REPORT_LABELS: Record<string, string> = {
+  energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
+  diesel_daily: 'Daily Diesel Consumption', diesel_monthly: 'Monthly Diesel Consumption',
+  power_quality: 'Power Quality', power_interruption: 'Power Interruption',
+  consumption_summary: 'Consumption Summary',
+};
+
+async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void> {
+  const { rows: [sched] } = await pool.query('SELECT * FROM report_schedules WHERE frequency=$1', [frequency]);
+  if (!sched?.enabled) { console.log(`[Scheduler] ${frequency} report is disabled, skipping.`); return; }
+
+  const now = new Date();
+  let start: string, end: string, periodLabel: string;
+  if (frequency === 'daily') {
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
+    start = end = yesterday.toISOString().split('T')[0];
+    periodLabel = new Date(start).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+  } else {
+    start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
+    end = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
+    periodLabel = new Date(start).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' });
+  }
+
+  console.log(`[Scheduler] Generating ${frequency} report (${sched.report_type}, ${sched.format})…`);
+  try {
+    const { buffer, filename, contentType } = await reportService.generate({
+      type: sched.report_type, periodStart: start, periodEnd: end, format: sched.format,
+      plantId: sched.plant_id ?? undefined,
+      generatedBy: { id: 'system', email: 'system', name: 'System', role: 'admin', is_verified: true },
+    });
+
+    await pool.query(
+      'INSERT INTO reports (report_type,period_start,period_end,format,file_name,plant_id,auto_generated) VALUES ($1,$2,$3,$4,$5,$6,true)',
+      [sched.report_type, start, end, sched.format, filename, sched.plant_id ?? null]
+    );
+
+    const { rows } = await pool.query("SELECT email FROM users WHERE role='admin' AND is_verified=true");
+    const emails = rows.map((r: { email: string }) => r.email);
+    if (emails.length) {
+      const label = REPORT_LABELS[sched.report_type] ?? sched.report_type;
+      await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType);
+      console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
+    }
+  } catch (err) { console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message); }
+}
+
 export function startScheduler(): void {
   // Auto monthly report on 1st of each month at 06:00
-  cron.schedule('0 6 1 * *', async () => {
-    console.log('[Scheduler] Generating monthly report…');
-    try {
-      const now = new Date();
-      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-      const end = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
-      const label = new Date(start).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' });
+  cron.schedule('0 6 1 * *', () => runScheduledReport('monthly'));
 
-      const { buffer } = await reportService.generate({
-        type: 'consumption_summary', periodStart: start, periodEnd: end, format: 'excel',
-        generatedBy: { id: 'system', email: 'system', name: 'System', role: 'admin', is_verified: true },
-      });
-
-      await pool.query(
-        'INSERT INTO reports (report_type,period_start,period_end,format,file_name,auto_generated) VALUES ($1,$2,$3,$4,$5,true)',
-        ['consumption_summary', start, end, 'excel', `consumption_summary_${start}_to_${end}.xlsx`]
-      );
-
-      const { rows } = await pool.query("SELECT email FROM users WHERE role='admin' AND is_verified=true");
-      const emails = rows.map((r: { email: string }) => r.email);
-      if (emails.length) {
-        await emailService.sendMonthlyReport(emails, label, buffer);
-        console.log(`[Scheduler] Monthly report sent to ${emails.join(', ')}`);
-      }
-    } catch (err) { console.error('[Scheduler] Monthly report failed:', (err as Error).message); }
-  });
+  // Auto daily report at 00:10 (after the 00:05 summary recalc below has run)
+  cron.schedule('10 0 * * *', () => runScheduledReport('daily'));
 
   // Daily summary recalc at 00:05
   cron.schedule('5 0 * * *', async () => {
