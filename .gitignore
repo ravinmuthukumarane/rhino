@@ -15,3 +15,11 @@ yarn-error.log*
 .cache/
 coverage/
 .turbo/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated meter-poll output (script/test.py)
+script/meter_readings.csv
+script/meter_readings.json
