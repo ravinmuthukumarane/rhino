@@ -1,10 +1,12 @@
 version: '3.9'
 
+# Runtime-only deploy file: references pre-built images by name, no `build:`
+# context and no bind mounts into the source tree. This is the only file
+# (alongside .env) that needs to remain on the server after building —
+# see DEPLOY.md.
+
 services:
   postgres:
-    build:
-      context: ./backend/src/db
-      dockerfile: Dockerfile
     image: rhino-postgres:latest
     container_name: rhino-postgres
     environment:
@@ -23,9 +25,6 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     image: rhino-backend:latest
     container_name: rhino-backend
     depends_on:
@@ -56,9 +55,6 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     image: rhino-frontend:latest
     container_name: rhino-frontend
     depends_on:
