@@ -30,6 +30,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach the EMQX broker running directly on the host
     environment:
       NODE_ENV: production
       DB_HOST: postgres
@@ -46,9 +48,9 @@ services:
       SMTP_USER: ${SMTP_USER}
       SMTP_PASS: ${SMTP_PASS}
       EMAIL_FROM: ${EMAIL_FROM}
-      ENABLE_SIMULATOR: "true"
-      SIMULATOR_INTERVAL_MS: 5000
-      ENABLE_MQTT: "false"
+      ENABLE_SIMULATOR: "false"
+      ENABLE_MQTT: "true"
+      MQTT_BROKER_URL: mqtt://host.docker.internal:1883
       ENABLE_SCHEDULER: "true"
     ports:
       - "127.0.0.1:5000:5000"
