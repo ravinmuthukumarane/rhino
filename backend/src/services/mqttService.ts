@@ -24,25 +24,26 @@ export async function startMQTT(io: Server): Promise<void> {
   });
   client = mqttClient;
 
+  const TELEMETRY_TOPIC = process.env.MQTT_TELEMETRY_TOPIC || 'rhino/rrpl/telemetry';
+
   mqttClient.on('connect', () => {
     console.log('[MQTT] Connected to broker:', brokerUrl);
-    // Subscribe to energy and flow meter topics
-    mqttClient.subscribe('energy/+/data', (err) => {
-      if (!err) console.log('[MQTT] Subscribed to energy/+/data');
-    });
-    mqttClient.subscribe('diesel/+/data', (err) => {
-      if (!err) console.log('[MQTT] Subscribed to diesel/+/data');
+    mqttClient.subscribe(TELEMETRY_TOPIC, (err) => {
+      if (!err) console.log(`[MQTT] Subscribed to ${TELEMETRY_TOPIC}`);
     });
   });
 
-  mqttClient.on('message', async (topic: string, message: Buffer) => {
+  mqttClient.on('message', async (_topic: string, message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
 
-      if (topic.startsWith('energy/')) {
-        await handleEnergyReading(data, io);
-      } else if (topic.startsWith('diesel/')) {
+      // A single shared topic carries both energy and diesel readings, so
+      // routing is by an explicit 'type' field in the payload rather than
+      // by topic prefix (which is how per-meter topics used to route).
+      if (data.type === 'diesel') {
         await handleDieselReading(data, io);
+      } else {
+        await handleEnergyReading(data, io);
       }
     } catch (err) {
       console.error('[MQTT] Parse error:', (err as Error).message);
