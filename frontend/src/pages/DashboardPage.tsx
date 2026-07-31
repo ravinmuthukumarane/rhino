@@ -8,9 +8,38 @@ import { readingsApi } from '../services/api';
 import { fmt } from '../utils/formatters';
 import { getTimePeriod, timePeriodLabels, timePeriodColors } from '../utils/timeUtils';
 import { subDays, format } from 'date-fns';
-import type { EnergyReading, TimePeriod } from '../types';
+import type { EnergyReading, LiveReadingPayload, TimePeriod } from '../types';
 
 const MAX_LIVE = 30;
+
+// Plant-level view: sum extensive quantities (power, current) across every
+// currently-reporting meter, average intensive ones (voltage, PF, frequency)
+// instead of showing whichever single meter's message arrived last.
+function aggregateEnergyReadings(readings: EnergyReading[]): EnergyReading | null {
+  if (readings.length === 0) return null;
+  const n = readings.length;
+  const num = (v: unknown) => parseFloat(String(v)) || 0;
+  const sum = (key: keyof EnergyReading) => readings.reduce((acc, r) => acc + num(r[key]), 0);
+  const avg = (key: keyof EnergyReading) => sum(key) / n;
+  const latest = readings.reduce((a, b) => (new Date(a.recorded_at) > new Date(b.recorded_at) ? a : b));
+
+  return {
+    ...latest,
+    voltage_r: avg('voltage_r'),
+    voltage_y: avg('voltage_y'),
+    voltage_b: avg('voltage_b'),
+    current_r: sum('current_r'),
+    current_y: sum('current_y'),
+    current_b: sum('current_b'),
+    power_kw: sum('power_kw'),
+    power_kva: sum('power_kva'),
+    power_factor: avg('power_factor'),
+    frequency: avg('frequency'),
+    third_harmonic_r: avg('third_harmonic_r'),
+    third_harmonic_y: avg('third_harmonic_y'),
+    third_harmonic_b: avg('third_harmonic_b'),
+  };
+}
 
 function MetricCard({ label, value, unit, color = 'primary', sub }: { label: string; value: any; unit?: string; color?: string; sub?: string }) {
   const colors: Record<string, string> = {
@@ -44,15 +73,23 @@ export default function DashboardPage() {
   const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
   const [consumPeriod, setConsumPeriod] = useState<'daily'|'monthly'|'yearly'>('monthly');
 
-  // Use first matching plant reading or first available
-  const reading = selectedPlantId
-    ? liveReadings.get(selectedPlantId)
-    : Array.from(liveReadings.values())[0];
+  // All meters currently reporting for the selected plant (or the first
+  // plant with any data, if none selected) - one entry per meter_id.
+  const plantMeters: Map<string, LiveReadingPayload> = selectedPlantId
+    ? liveReadings.get(selectedPlantId) ?? new Map()
+    : Array.from(liveReadings.values())[0] ?? new Map();
+  const meterReadings = Array.from(plantMeters.values());
 
-  const e = reading?.energy;
-  const d = reading?.diesel;
-  const gen = reading?.generator;
-  const tp: TimePeriod = reading?.timePeriod ?? getTimePeriod();
+  const energyReadings = meterReadings
+    .map((r) => r.energy)
+    .filter((e): e is EnergyReading => e != null);
+  const e = aggregateEnergyReadings(energyReadings);
+
+  const dieselReadings = meterReadings.filter((r) => r.diesel != null);
+  const d = dieselReadings.sort((a, b) => new Date(b.diesel!.recorded_at).getTime() - new Date(a.diesel!.recorded_at).getTime())[0]?.diesel;
+
+  const gen = meterReadings.find((r) => r.generator != null)?.generator;
+  const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
 
   // Accumulate live history
   const prevRef = { current: liveHistory };

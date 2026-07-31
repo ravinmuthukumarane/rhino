@@ -3,9 +3,16 @@ import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import type { Alert, LiveReadingPayload } from '../types';
 
+// plant_id -> meter_id -> that meter's latest reading. A plant has many
+// meters reporting independently; keying only by plant_id would make each
+// new meter's message overwrite the previous one instead of accumulating
+// a full picture of the plant. meter_id falls back to '__plant__' for
+// events that aren't per-meter (e.g. a plant-wide generator status change).
+type PlantReadings = Map<string, Map<string, LiveReadingPayload>>;
+
 interface SocketContextValue {
   connected: boolean;
-  liveReadings: Map<string, LiveReadingPayload>;
+  liveReadings: PlantReadings;
   activeAlerts: Alert[];
   dismissAlert: (id: number) => void;
 }
@@ -16,7 +23,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const [connected, setConnected] = useState(false);
-  const [liveReadings, setLiveReadings] = useState<Map<string, LiveReadingPayload>>(new Map());
+  const [liveReadings, setLiveReadings] = useState<PlantReadings>(new Map());
   const [activeAlerts, setActiveAlerts] = useState<Alert[]>([]);
 
   useEffect(() => {
@@ -30,7 +37,10 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     socket.on('live_reading', (data: LiveReadingPayload) => {
       setLiveReadings((prev) => {
         const next = new Map(prev);
-        next.set(data.plant_id, data);
+        const meterKey = data.meter_id ?? '__plant__';
+        const plantMeters = new Map(next.get(data.plant_id));
+        plantMeters.set(meterKey, data);
+        next.set(data.plant_id, plantMeters);
         return next;
       });
     });

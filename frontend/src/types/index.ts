@@ -109,6 +109,7 @@ export interface LiveReadingPayload {
   generator: { status: GeneratorStatus; generator_id: string } | null;
   timePeriod: TimePeriod;
   plant_id: string;
+  meter_id?: string;
 }
 
 export interface Alert {

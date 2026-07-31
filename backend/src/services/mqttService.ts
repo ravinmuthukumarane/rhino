@@ -64,8 +64,14 @@ interface DeviceTelemetry {
   plant_id?: string;
   timestamp?: string | number;
   tags?: {
+    // Wattz SDM630 naming
     volt_l1?: number; volt_l2?: number; volt_l3?: number;
     curr_l1?: number; curr_l2?: number; curr_l3?: number;
+    // Schneider PM2120 naming - no current tags observed in real traffic
+    volt_an?: number; volt_bn?: number; volt_cn?: number;
+    volt_ab?: number; volt_bc?: number; volt_ca?: number;
+    curr_a?: number; curr_b?: number; curr_c?: number;
+    power_a?: number; power_b?: number; power_c?: number;
     power_l1?: number; power_l2?: number; power_l3?: number;
     total_power?: number; total_app?: number; total_pf?: number;
     freq?: number; import_kwh?: number;
@@ -81,10 +87,18 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
   try {
     const deviceId = data.device_id;
     const tags = data.tags;
-    if (!deviceId || !tags || typeof tags.volt_l1 !== 'number') {
+    // Different meter models use different tag names for voltage (Wattz:
+    // volt_l1, Schneider: volt_an or volt_ab) - accept whichever is present
+    // rather than assuming one schema. Values are passed through as-is; a
+    // meter reporting an implausible voltage is a calibration issue on that
+    // device, not something to silently "correct" here.
+    const voltR = tags?.volt_l1 ?? tags?.volt_an ?? tags?.volt_ab;
+    if (!deviceId || !tags || typeof voltR !== 'number') {
       console.error('[MQTT] Invalid energy data:', data);
       return;
     }
+    const voltY = tags.volt_l2 ?? tags.volt_bn ?? tags.volt_bc ?? voltR;
+    const voltB = tags.volt_l3 ?? tags.volt_cn ?? tags.volt_ca ?? voltR;
 
     const { rows } = await pool.query(
       'SELECT meter_id, plant_id, default_source FROM energy_meters WHERE device_id = $1',
@@ -101,9 +115,9 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     const timePeriod = getTimePeriod();
     const powerKw = (tags.total_power ?? 0) * POWER_SCALE;
     const powerKva = (tags.total_app ?? 0) * POWER_SCALE;
-    const voltR = tags.volt_l1;
-    const voltY = tags.volt_l2 ?? tags.volt_l1;
-    const voltB = tags.volt_l3 ?? tags.volt_l1;
+    const currR = tags.curr_l1 ?? tags.curr_a ?? 0;
+    const currY = tags.curr_l2 ?? tags.curr_b ?? currR;
+    const currB = tags.curr_l3 ?? tags.curr_c ?? currR;
 
     // Insert energy reading
     const { rows: [reading] } = await pool.query(
@@ -121,9 +135,9 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
         voltR,
         voltY,
         voltB,
-        tags.curr_l1 ?? 0,
-        tags.curr_l2 ?? tags.curr_l1 ?? 0,
-        tags.curr_l3 ?? tags.curr_l1 ?? 0,
+        currR,
+        currY,
+        currB,
         powerKw,
         powerKva,
         tags.total_pf ?? 0,
