@@ -7,13 +7,24 @@ and publishes readings to the rhino backend's MQTT broker in the format
 backend/src/services/mqttService.ts expects:
 
     topic:   rhino/rrpl/telemetry            (single shared topic)
-    payload: {meter_id, type: "energy", voltage_r/y/b, current_r/y/b,
-              power_kw, power_kva, power_factor, energy_kwh, frequency,
-              source, timestamp}
+    payload: {"device_id": "u155_10", "plant_id": "rhaino",
+              "timestamp": "2026-07-31T22:55:42.000+05:30",
+              "tags": {"volt_l1":.., "volt_l2":.., "volt_l3":..,
+                       "curr_l1":.., "curr_l2":.., "curr_l3":..,
+                       "total_power":.., "total_app":.., "total_pf":..,
+                       "freq":.., "import_kwh":..}}
 
-meter_id must exactly match a meter_id already registered in the app under
-Device Settings -> Energy Meters (see meters_inventory.py for the mapping and
-which two meters still need registering).
+device_id = "u{gateway last IP octet}_{modbus unit id}", e.g. gateway
+192.168.1.155 unit 10 -> "u155_10". The backend looks up meter_id/plant_id/
+source purely from device_id (see energy_meters.device_id in the DB) - it is
+NOT read from meter_id or plant_id in the payload. See meters_inventory.py
+for which two meters still need registering under Device Settings before
+they'll have a device_id to publish against.
+
+total_power/total_app are published in Watts/VA (matching mqtt.md's
+documented Wattz SDM630 register units) - the backend converts to kW/kVA by
+dividing by 1000 unless MQTT_POWER_UNIT=kw is set there. Verify this against
+real meter readings; flip that env var if the gateway already reports kW/kVA.
 
 Requirements:
     pip install pymodbus>=3.0 paho-mqtt>=1.6
@@ -33,7 +44,7 @@ import json
 import signal
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 try:
     from pymodbus.client import ModbusTcpClient
@@ -72,13 +83,31 @@ def _handle_sigint(signum, frame):
     _running = False
 
 
-def build_payload(meter_id: str, source: str, values: dict) -> dict:
-    payload = dict(values)
-    payload['meter_id'] = meter_id
-    payload['type'] = 'energy'
-    payload['source'] = source
-    payload['timestamp'] = int(datetime.now(timezone.utc).timestamp() * 1000)
-    return payload
+def device_id(gateway: str, unit: int) -> str:
+    last_octet = gateway.split('.')[-1]
+    return f"u{last_octet}_{unit}"
+
+
+def build_payload(gateway: str, unit: int, values: dict) -> dict:
+    tags = {
+        'volt_l1': values['voltage_r'],
+        'volt_l2': values['voltage_y'],
+        'volt_l3': values['voltage_b'],
+        'curr_l1': values['current_r'],
+        'curr_l2': values['current_y'],
+        'curr_l3': values['current_b'],
+        'total_power': round(values['power_kw'] * 1000, 3),   # W - see module docstring
+        'total_app': round(values['power_kva'] * 1000, 3),    # VA
+        'total_pf': values['power_factor'],
+        'freq': values['frequency'],
+        'import_kwh': values['energy_kwh'],
+    }
+    return {
+        'device_id': device_id(gateway, unit),
+        'plant_id': 'rhaino',
+        'timestamp': datetime.now().astimezone().isoformat(timespec='milliseconds'),
+        'tags': tags,
+    }
 
 
 def poll_once(mqtt_client, only=None):
@@ -110,9 +139,9 @@ def poll_once(mqtt_client, only=None):
                     skipped += 1
                     continue
 
-                payload_dict = build_payload(meter_id, source, values)
+                payload_dict = build_payload(gateway, unit, values)
                 mqtt_client.publish(TELEMETRY_TOPIC, json.dumps(payload_dict), qos=1)
-                print(f"  {label}: published ({values['power_kw']} kW, {values['voltage_r']} V)")
+                print(f"  {label}: published as {payload_dict['device_id']} ({values['power_kw']} kW, {values['voltage_r']} V)")
                 ok += 1
         finally:
             client.close()

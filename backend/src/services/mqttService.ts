@@ -59,30 +59,51 @@ export async function startMQTT(io: Server): Promise<void> {
   });
 }
 
-async function handleEnergyReading(data: MeterData, io: Server): Promise<void> {
+interface DeviceTelemetry {
+  device_id?: string;
+  plant_id?: string;
+  timestamp?: string | number;
+  tags?: {
+    volt_l1?: number; volt_l2?: number; volt_l3?: number;
+    curr_l1?: number; curr_l2?: number; curr_l3?: number;
+    power_l1?: number; power_l2?: number; power_l3?: number;
+    total_power?: number; total_app?: number; total_pf?: number;
+    freq?: number; import_kwh?: number;
+  };
+}
+
+// mqtt.md documents the Wattz SDM630's Total active/apparent power registers
+// in Watts/VA (not kW/kVA). Set MQTT_POWER_UNIT=kw once real values confirm
+// the gateway already reports kW/kVA directly, to skip the /1000 conversion.
+const POWER_SCALE = process.env.MQTT_POWER_UNIT === 'kw' ? 1 : 0.001;
+
+async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<void> {
   try {
-    // Validate required fields
-    if (!data.meter_id || typeof data.voltage_r !== 'number') {
+    const deviceId = data.device_id;
+    const tags = data.tags;
+    if (!deviceId || !tags || typeof tags.volt_l1 !== 'number') {
       console.error('[MQTT] Invalid energy data:', data);
       return;
     }
 
-    // Get plant_id from database if not in payload
-    let plantId = data.plant_id;
-    if (!plantId) {
-      const { rows } = await pool.query(
-        'SELECT plant_id FROM energy_meters WHERE meter_id = $1',
-        [data.meter_id]
-      );
-      if (!rows[0]) {
-        console.error('[MQTT] Meter not found:', data.meter_id);
-        return;
-      }
-      plantId = rows[0].plant_id;
+    const { rows } = await pool.query(
+      'SELECT meter_id, plant_id, default_source FROM energy_meters WHERE device_id = $1',
+      [deviceId]
+    );
+    if (!rows[0]) {
+      console.error('[MQTT] Unknown device_id:', deviceId);
+      return;
     }
+    const meterId: string = rows[0].meter_id;
+    const plantId: string = rows[0].plant_id;
+    const source: PowerSource = (rows[0].default_source as PowerSource) ?? 'CEB';
 
     const timePeriod = getTimePeriod();
-    const source: PowerSource = data.source || 'CEB';
+    const powerKw = (tags.total_power ?? 0) * POWER_SCALE;
+    const powerKva = (tags.total_app ?? 0) * POWER_SCALE;
+    const voltR = tags.volt_l1;
+    const voltY = tags.volt_l2 ?? tags.volt_l1;
+    const voltB = tags.volt_l3 ?? tags.volt_l1;
 
     // Insert energy reading
     const { rows: [reading] } = await pool.query(
@@ -95,22 +116,20 @@ async function handleEnergyReading(data: MeterData, io: Server): Promise<void> {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING *`,
       [
-        data.meter_id,
+        meterId,
         plantId,
-        data.voltage_r,
-        data.voltage_y ?? data.voltage_r,
-        data.voltage_b ?? data.voltage_r,
-        data.current_r,
-        data.current_y ?? data.current_r,
-        data.current_b ?? data.current_r,
-        data.power_kw,
-        data.power_kva,
-        data.power_factor,
-        data.energy_kwh,
-        data.frequency ?? 50,
-        data.third_harmonic_r ?? 0,
-        data.third_harmonic_y ?? 0,
-        data.third_harmonic_b ?? 0,
+        voltR,
+        voltY,
+        voltB,
+        tags.curr_l1 ?? 0,
+        tags.curr_l2 ?? tags.curr_l1 ?? 0,
+        tags.curr_l3 ?? tags.curr_l1 ?? 0,
+        powerKw,
+        powerKva,
+        tags.total_pf ?? 0,
+        tags.import_kwh ?? 0,
+        tags.freq ?? 50,
+        0, 0, 0,
         source,
         timePeriod,
         new Date(data.timestamp || Date.now()),
@@ -119,7 +138,7 @@ async function handleEnergyReading(data: MeterData, io: Server): Promise<void> {
 
     // Update daily summary
     const today = new Date(data.timestamp || Date.now()).toISOString().split('T')[0];
-    const dKwh = (data.power_kw || 0) * (5 / 3600); // Assuming 5-second intervals
+    const dKwh = powerKw * (5 / 3600); // Assuming 5-second intervals
     const cebKwh = source === 'CEB' ? dKwh : 0;
     const genKwh = source === 'GENERATOR' ? dKwh : 0;
 
@@ -141,11 +160,11 @@ async function handleEnergyReading(data: MeterData, io: Server): Promise<void> {
       [
         today,
         plantId,
-        data.meter_id,
+        meterId,
         dKwh,
-        data.power_kva || 0,
-        data.power_factor || 0.9,
-        (data.voltage_r + (data.voltage_y ?? data.voltage_r) + (data.voltage_b ?? data.voltage_r)) / 3,
+        powerKva,
+        tags.total_pf ?? 0.9,
+        (voltR + voltY + voltB) / 3,
         cebKwh,
         genKwh,
         timePeriod === 'day' ? dKwh : 0,
@@ -158,21 +177,21 @@ async function handleEnergyReading(data: MeterData, io: Server): Promise<void> {
     await checkAndAlert(reading as EnergyReading, io);
 
     // Check power switch
-    const prevSource = lastPowerSource[data.meter_id];
+    const prevSource = lastPowerSource[meterId];
     if (prevSource && prevSource !== source) {
-      await checkPowerSwitch(source, prevSource, plantId, data.meter_id, io);
+      await checkPowerSwitch(source, prevSource, plantId, meterId, io);
     }
-    lastPowerSource[data.meter_id] = source;
+    lastPowerSource[meterId] = source;
 
     // Emit to frontend
     io.emit('live_reading', {
       energy: reading,
       plant_id: plantId,
-      meter_id: data.meter_id,
+      meter_id: meterId,
       timePeriod,
     });
 
-    console.log(`[MQTT] Energy reading stored: ${data.meter_id}`);
+    console.log(`[MQTT] Energy reading stored: ${meterId} (device ${deviceId})`);
   } catch (err) {
     console.error('[MQTT] Error storing energy reading:', (err as Error).message);
   }

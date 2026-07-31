@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS energy_meters (
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
   model VARCHAR(255),
   serial_number VARCHAR(255),
+  device_id VARCHAR(50) UNIQUE,          -- MQTT bridge device id, e.g. "u155_10" (gateway last octet + Modbus unit)
+  default_source VARCHAR(20) DEFAULT 'CEB' CHECK (default_source IN ('CEB', 'GENERATOR')),
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()

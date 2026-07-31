@@ -1,0 +1,19 @@
+applies_to,data_point,unit,required,description
+energy,meter_id,string,yes,Must exactly match the meter_id registered in Device Settings -> Energy Meters
+energy,voltage_r,V,yes,Phase R/A line-to-neutral voltage
+energy,voltage_y,V,yes,Phase Y/B line-to-neutral voltage
+energy,voltage_b,V,yes,Phase B/C line-to-neutral voltage
+energy,current_r,A,yes,Phase R/A current
+energy,current_y,A,yes,Phase Y/B current
+energy,current_b,A,yes,Phase B/C current
+energy,power_kw,kW,yes,Total active power (all 3 phases)
+energy,power_kva,kVA,yes,Total apparent power (all 3 phases)
+energy,power_factor,ratio -1 to 1,yes,Total power factor
+energy,frequency,Hz,no (defaults 50),Line frequency
+energy,energy_kwh,kWh,no,Cumulative imported active energy (running total)
+energy,source,CEB or GENERATOR,no (defaults CEB),Whether this meter is on grid supply or generator output
+energy,timestamp,ms epoch,no (defaults now),Reading time
+flow,meter_id,string,yes,Must exactly match the meter_id registered in Device Settings -> Flow Meters
+flow,flow_rate,L/hr,yes,Instantaneous diesel flow rate
+flow,total_volume,L,yes,Cumulative volume (running total)
+flow,timestamp,ms epoch,no (defaults now),Reading time
