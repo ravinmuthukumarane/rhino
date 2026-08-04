@@ -255,11 +255,12 @@ REGISTER_MAPS = {
 # =====================================================================
 INVENTORY = [
     # gateway_ip,       unit, model_key,            location, description,                 ct
-    ("192.168.1.119",   3,  "wattz",            "P1", "PR",                          (400, 5)),
-    ("192.168.1.119",   2,  "wattz",            "P1", "BM Sec1 ST/TH/MD/TR",         (800, 5)),
-    ("192.168.1.119",   1,  "wattz",            "P1", "BM Sec2 Vacuum/VAT/CON",      (250, 5)),
-    ("192.168.1.119",   4,  "wattz",            "P1", "STR/COMPRE",                  (400, 5)),
-    ("192.168.1.119",   5,  "wattz",            "P1", "GENERATOR",                   (2000, 5)),
+    # Units on this gateway shifted +1 on-device 2026-08-04 (old 1-5 -> new 2-6); 29 unaffected.
+    ("192.168.1.119",   4,  "wattz",            "P1", "PR",                          (400, 5)),
+    ("192.168.1.119",   3,  "wattz",            "P1", "BM Sec1 ST/TH/MD/TR",         (800, 5)),
+    ("192.168.1.119",   2,  "wattz",            "P1", "BM Sec2 Vacuum/VAT/CON",      (250, 5)),
+    ("192.168.1.119",   5,  "wattz",            "P1", "STR/COMPRE",                  (400, 5)),
+    ("192.168.1.119",   6,  "wattz",            "P1", "GENERATOR",                   (2000, 5)),
     ("192.168.1.119",  29,  "schneider_pm2120", "P1", "P1 Main Incoming Energy",     (2000, 5)),
 
     ("192.168.1.155",   7,  "wattz",            "P1", "Compressor 1",                (100, 5)),

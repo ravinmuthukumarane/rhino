@@ -36,11 +36,11 @@ return **primary** values, so **do not multiply again** in code.
 
 | Gateway IP     | Unit id | Meter type      | Location / load            | CT      | Status |
 |----------------|---------|-----------------|----------------------------|---------|--------|
-| 192.168.1.119  | 1       | Wattz (SDM630)  | BM Section 2 (Vac/VAT/CON) | 250/5   | ✅ live |
-| 192.168.1.119  | 2       | Wattz (SDM630)  | BM Section 1 (ST/TH/MD/TR) | 800/5   | ✅ live |
-| 192.168.1.119  | 3       | Wattz (SDM630)  | P1 – PR                    | 400/5   | ✅ live |
-| 192.168.1.119  | 4       | Wattz (SDM630)  | STR / COMPRE               | 400/5   | ✅ live |
-| 192.168.1.119  | 5       | Wattz (SDM630)  | Generator (P1)             | 2000/5  | ✅ live |
+| 192.168.1.119  | 2       | Wattz (SDM630)  | BM Section 2 (Vac/VAT/CON) | 250/5   | ✅ live |
+| 192.168.1.119  | 3       | Wattz (SDM630)  | BM Section 1 (ST/TH/MD/TR) | 800/5   | ✅ live |
+| 192.168.1.119  | 4       | Wattz (SDM630)  | P1 – PR                    | 400/5   | ✅ live |
+| 192.168.1.119  | 5       | Wattz (SDM630)  | STR / COMPRE               | 400/5   | ✅ live |
+| 192.168.1.119  | 6       | Wattz (SDM630)  | Generator (P1)             | 2000/5  | ✅ live |
 | 192.168.1.119  | 29      | Schneider PM2120| P1 Main Incoming           | 2000/5  | ⬜ add to table |
 | 192.168.1.155  | 6       | Wattz (SDM630)  | Air Dryer                  | 100/5   | ✅ live |
 | 192.168.1.155  | 7       | Wattz (SDM630)  | Compressor 1               | 100/5   | ✅ live |

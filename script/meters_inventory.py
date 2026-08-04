@@ -17,11 +17,12 @@ not a bridge bug. Expect read errors for it until that's fixed on-site.
 
 METERS = [
     # gateway,          unit, type,      meter_id,                         source,      registered
-    ('192.168.1.119',   1,    'wattz',   'BM Section 2 -Vacuum/VAT/CON',   'CEB',       True),
-    ('192.168.1.119',   2,    'wattz',   'BM Section 1 -ST/TH/MD/TR',      'CEB',       True),
-    ('192.168.1.119',   3,    'wattz',   'PR',                             'CEB',       True),
-    ('192.168.1.119',   4,    'wattz',   'STR/COMPRE',                     'CEB',       True),
-    ('192.168.1.119',   5,    'wattz',   'GENERATOR',                      'GENERATOR', True),
+    # Units on this gateway shifted +1 on-device 2026-08-04 (old 1-5 -> new 2-6); 29 unaffected.
+    ('192.168.1.119',   2,    'wattz',   'BM Section 2 -Vacuum/VAT/CON',   'CEB',       True),
+    ('192.168.1.119',   3,    'wattz',   'BM Section 1 -ST/TH/MD/TR',      'CEB',       True),
+    ('192.168.1.119',   4,    'wattz',   'PR',                             'CEB',       True),
+    ('192.168.1.119',   5,    'wattz',   'STR/COMPRE',                     'CEB',       True),
+    ('192.168.1.119',   6,    'wattz',   'GENERATOR',                      'GENERATOR', True),
     ('192.168.1.119',   29,   'pm2120',  'P1 -Main Incoming Energy',       'CEB',       True),
 
     ('192.168.1.155',   6,    'wattz',   'Air Dryer',                      'CEB',       True),
