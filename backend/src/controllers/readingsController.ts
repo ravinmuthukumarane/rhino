@@ -77,24 +77,46 @@ export async function getGeneratorEvents(req: AuthRequest, res: Response, next: 
 export async function getDailySummary(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { from, to, plant_id, meter_id, limit = '365' } = req.query as Record<string, string>;
   try {
+    // When meter_id isn't specified, aggregate across every meter for the
+    // plant (one row per date) rather than returning one row per meter per
+    // date - callers that want plant-wide totals (e.g. the dashboard chart)
+    // would otherwise get N rows per date and no way to combine them.
     const [energy, diesel] = await Promise.all([
       pool.query(
-        `SELECT des.*, p.name AS plant_name FROM daily_energy_summary des
+        `SELECT des.summary_date, des.plant_id, p.name AS plant_name,
+                ${meter_id ? 'des.meter_id,' : ''}
+                SUM(des.total_kwh)::numeric(14,3) AS total_kwh,
+                MAX(des.max_kva)::numeric(10,3) AS max_kva,
+                AVG(des.avg_power_factor)::numeric(5,3) AS avg_power_factor,
+                AVG(des.avg_voltage)::numeric(8,3) AS avg_voltage,
+                SUM(des.ceb_kwh)::numeric(14,3) AS ceb_kwh,
+                SUM(des.generator_kwh)::numeric(14,3) AS generator_kwh,
+                SUM(des.day_kwh)::numeric(14,3) AS day_kwh,
+                SUM(des.peak_kwh)::numeric(14,3) AS peak_kwh,
+                SUM(des.off_peak_kwh)::numeric(14,3) AS off_peak_kwh,
+                SUM(des.interruption_count) AS interruption_count
+         FROM daily_energy_summary des
          LEFT JOIN plants p ON p.id = des.plant_id
          WHERE ($1::date IS NULL OR des.summary_date >= $1)
            AND ($2::date IS NULL OR des.summary_date <= $2)
            AND ($3::uuid IS NULL OR des.plant_id = $3)
            AND ($4::text IS NULL OR des.meter_id = $4)
+         GROUP BY des.summary_date, des.plant_id, p.name${meter_id ? ', des.meter_id' : ''}
          ORDER BY des.summary_date DESC LIMIT $5`,
         [from ?? null, to ?? null, plant_id ?? null, meter_id ?? null, Math.min(parseInt(limit), 730)]
       ),
       pool.query(
-        `SELECT dds.*, p.name AS plant_name FROM daily_diesel_summary dds
+        `SELECT dds.summary_date, dds.plant_id, p.name AS plant_name,
+                ${meter_id ? 'dds.meter_id,' : ''}
+                SUM(dds.total_liters)::numeric(14,3) AS total_liters,
+                SUM(dds.generator_run_hours)::numeric(8,3) AS generator_run_hours
+         FROM daily_diesel_summary dds
          LEFT JOIN plants p ON p.id = dds.plant_id
          WHERE ($1::date IS NULL OR dds.summary_date >= $1)
            AND ($2::date IS NULL OR dds.summary_date <= $2)
            AND ($3::uuid IS NULL OR dds.plant_id = $3)
            AND ($4::text IS NULL OR dds.meter_id = $4)
+         GROUP BY dds.summary_date, dds.plant_id, p.name${meter_id ? ', dds.meter_id' : ''}
          ORDER BY dds.summary_date DESC LIMIT $5`,
         [from ?? null, to ?? null, plant_id ?? null, meter_id ?? null, Math.min(parseInt(limit), 730)]
       ),
@@ -106,10 +128,12 @@ export async function getDailySummary(req: AuthRequest, res: Response, next: Nex
 export async function getMonthlySummary(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { year = String(new Date().getFullYear()), plant_id, meter_id } = req.query as Record<string, string>;
   try {
+    // Same reasoning as getDailySummary: only group by meter_id when a
+    // specific meter was requested, otherwise aggregate the whole plant.
     const [energy, diesel] = await Promise.all([
       pool.query(
         `SELECT DATE_TRUNC('month', summary_date) AS month,
-                des.plant_id, p.name AS plant_name, des.meter_id,
+                des.plant_id, p.name AS plant_name${meter_id ? ', des.meter_id' : ''},
                 SUM(total_kwh)::numeric(14,2) AS total_kwh,
                 MAX(max_kva)::numeric(10,2) AS max_kva,
                 AVG(avg_power_factor)::numeric(5,3) AS avg_power_factor,
@@ -124,13 +148,13 @@ export async function getMonthlySummary(req: AuthRequest, res: Response, next: N
          WHERE EXTRACT(YEAR FROM summary_date) = $1
            AND ($2::uuid IS NULL OR des.plant_id = $2)
            AND ($3::text IS NULL OR des.meter_id = $3)
-         GROUP BY DATE_TRUNC('month', summary_date), des.plant_id, p.name, des.meter_id
+         GROUP BY DATE_TRUNC('month', summary_date), des.plant_id, p.name${meter_id ? ', des.meter_id' : ''}
          ORDER BY month`,
         [parseInt(year), plant_id ?? null, meter_id ?? null]
       ),
       pool.query(
         `SELECT DATE_TRUNC('month', summary_date) AS month,
-                dds.plant_id, p.name AS plant_name, dds.meter_id,
+                dds.plant_id, p.name AS plant_name${meter_id ? ', dds.meter_id' : ''},
                 SUM(total_liters)::numeric(14,2) AS total_liters,
                 SUM(generator_run_hours)::numeric(8,2) AS generator_run_hours
          FROM daily_diesel_summary dds
@@ -138,7 +162,7 @@ export async function getMonthlySummary(req: AuthRequest, res: Response, next: N
          WHERE EXTRACT(YEAR FROM summary_date) = $1
            AND ($2::uuid IS NULL OR dds.plant_id = $2)
            AND ($3::text IS NULL OR dds.meter_id = $3)
-         GROUP BY DATE_TRUNC('month', summary_date), dds.plant_id, p.name, dds.meter_id
+         GROUP BY DATE_TRUNC('month', summary_date), dds.plant_id, p.name${meter_id ? ', dds.meter_id' : ''}
          ORDER BY month`,
         [parseInt(year), plant_id ?? null, meter_id ?? null]
       ),

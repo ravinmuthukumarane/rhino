@@ -4,10 +4,10 @@ import { Activity, Zap, Gauge, BarChart2, Droplets, Cpu, TrendingUp } from 'luci
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../context/SocketContext';
 import { usePlant } from '../context/PlantContext';
-import { readingsApi } from '../services/api';
+import { readingsApi, settingsApi } from '../services/api';
 import { fmt } from '../utils/formatters';
 import { getTimePeriod, timePeriodLabels, timePeriodColors } from '../utils/timeUtils';
-import { subDays, format } from 'date-fns';
+import { format } from 'date-fns';
 import type { EnergyReading, LiveReadingPayload, TimePeriod } from '../types';
 
 const MAX_LIVE = 30;
@@ -91,6 +91,31 @@ export default function DashboardPage() {
   const gen = meterReadings.find((r) => r.generator != null)?.generator;
   const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
 
+  // The plant has multiple physical sections (P1, P4, ...), each fed by its
+  // own incomer/generator - a single plant-wide CEB/Generator indicator
+  // hides which section is actually on grid vs generator. Group meters by
+  // their registered plant_section and show one indicator pair per section.
+  const { data: metersData } = useQuery({
+    queryKey: ['energy-meters-for-sections'],
+    queryFn: () => settingsApi.getEnergyMeters().then((r) => r.data),
+  });
+  const meterSections = new Map<string, string>(
+    (metersData?.meters ?? [])
+      .filter((m: any) => (!selectedPlantId || m.plant_id === selectedPlantId) && m.plant_section)
+      .map((m: any) => [m.meter_id, m.plant_section])
+  );
+  const sections = Array.from(new Set(meterSections.values())).sort();
+  const sectionData = sections.map((section) => {
+    const idsInSection = new Set(Array.from(meterSections.entries()).filter(([, s]) => s === section).map(([id]) => id));
+    const readingsInSection = meterReadings.filter((r) => r.meter_id && idsInSection.has(r.meter_id));
+    const sectionEnergy = aggregateEnergyReadings(readingsInSection.map((r) => r.energy).filter((x): x is EnergyReading => x != null));
+    return {
+      section,
+      isCEB: sectionEnergy?.source !== 'GENERATOR',
+      gen: readingsInSection.find((r) => r.generator != null)?.generator,
+    };
+  });
+
   // Accumulate live history
   const prevRef = { current: liveHistory };
   if (e && (prevRef.current.length === 0 || prevRef.current[prevRef.current.length - 1]?.ts !== e.recorded_at)) {
@@ -121,7 +146,7 @@ export default function DashboardPage() {
 
   const { data: dailyData } = useQuery({
     queryKey: ['daily-summary', selectedPlantId, consumPeriod],
-    queryFn: () => readingsApi.getDailySummary({ from: subDays(new Date(), 30).toISOString().split('T')[0], plant_id: selectedPlantId ?? undefined, limit: 30 }).then((r) => r.data),
+    queryFn: () => readingsApi.getDailySummary({ plant_id: selectedPlantId ?? undefined }).then((r) => r.data),
     enabled: consumPeriod === 'daily',
     refetchInterval: 60000,
   });
@@ -140,13 +165,13 @@ export default function DashboardPage() {
 
   const consumChartData = (() => {
     if (consumPeriod === 'daily') return (dailyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: format(new Date(r.summary_date), 'dd MMM'), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }));
-    if (consumPeriod === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => ({ label: format(new Date(r.month), 'MMM yy'), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }));
+    if (consumPeriod === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }));
     return (yearlyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: String(r.year), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
   })();
 
   const dieselChartData = (() => {
     if (consumPeriod === 'daily') return (dailyData?.diesel ?? []).slice().reverse().map((r: any) => ({ label: format(new Date(r.summary_date), 'dd MMM'), Liters: +r.total_liters||0 }));
-    if (consumPeriod === 'monthly') return (monthlyData?.diesel ?? []).map((r: any) => ({ label: format(new Date(r.month), 'MMM yy'), Liters: +r.total_liters||0 }));
+    if (consumPeriod === 'monthly') return (monthlyData?.diesel ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), Liters: +r.total_liters||0 }));
     return (yearlyData?.diesel ?? []).slice().reverse().map((r: any) => ({ label: String(r.year), Liters: +r.total_liters||0 }));
   })();
 
@@ -165,7 +190,6 @@ export default function DashboardPage() {
   const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
   const pfColor = !e?.power_factor ? 'primary' : +e.power_factor < 0.80 ? 'red' : +e.power_factor < 0.85 ? 'yellow' : 'green';
   const h3Color = !avgH3 ? 'cyan' : +avgH3 > 5 ? 'red' : +avgH3 > 3 ? 'yellow' : 'cyan';
-  const isCEB = e?.source !== 'GENERATOR';
 
   const today = statsData?.today ?? {};
   const unack = activeAlerts.filter((a) => !a.acknowledged).length;
@@ -188,27 +212,32 @@ export default function DashboardPage() {
         <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(today?.energy?.avg_power_factor)}`} />
       </div>
 
-      {/* Power source indicator */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${isCEB ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${isCEB ? 'bg-green-50 dark:bg-green-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
-            <Zap className={`w-5 h-5 ${isCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`} />
-          </div>
-          <div>
-            <p className={`font-semibold text-sm ${isCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>CEB {isCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
-            <p className="text-xs text-gray-500">Grid Supply</p>
+      {/* Power source indicator - one CEB/Generator pair per plant section */}
+      {sectionData.map(({ section, isCEB: sectionIsCEB, gen: sectionGen }) => (
+        <div key={section}>
+          <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">{section}</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                <Zap className={`w-5 h-5 ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`} />
+              </div>
+              <div>
+                <p className={`font-semibold text-sm ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>CEB {sectionIsCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
+                <p className="text-xs text-gray-500">Grid Supply</p>
+              </div>
+            </div>
+            <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+                <Cpu className={`w-5 h-5 ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`} />
+              </div>
+              <div>
+                <p className={`font-semibold text-sm ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`}>Generator {sectionGen?.status === 'ON' && !sectionIsCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
+                <p className="text-xs text-gray-500">{sectionGen?.status ?? 'STANDBY'} — {sectionGen?.generator_id ?? '—'}</p>
+              </div>
+            </div>
           </div>
         </div>
-        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!isCEB ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
-          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!isCEB ? 'bg-orange-50 dark:bg-orange-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
-            <Cpu className={`w-5 h-5 ${!isCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`} />
-          </div>
-          <div>
-            <p className={`font-semibold text-sm ${!isCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`}>Generator {gen?.status === 'ON' && !isCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
-            <p className="text-xs text-gray-500">{gen?.status ?? 'STANDBY'} — {gen?.generator_id ?? '—'}</p>
-          </div>
-        </div>
-      </div>
+      ))}
 
       {/* Live trend chart */}
       <div className="card">

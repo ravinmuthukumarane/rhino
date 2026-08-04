@@ -34,6 +34,7 @@ export interface EnergyMeter {
   plant_name?: string;
   model?: string;
   serial_number?: string;
+  plant_section?: string;
   is_active: boolean;
 }
 

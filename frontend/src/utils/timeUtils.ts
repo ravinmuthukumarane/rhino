@@ -1,7 +1,10 @@
 import type { TimePeriod } from '../types';
 
+// Sri Lanka local time (UTC+5:30, no DST), computed from UTC fields rather
+// than the browser's local timezone so this stays correct even when viewed
+// from outside Sri Lanka.
 export function getTimePeriod(date: Date = new Date()): TimePeriod {
-  const t = date.getHours() * 60 + date.getMinutes();
+  const t = (date.getUTCHours() * 60 + date.getUTCMinutes() + 330) % 1440;
   if (t >= 330 && t < 1110) return 'day';
   if (t >= 1110 && t < 1350) return 'peak';
   return 'off_peak';

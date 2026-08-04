@@ -1,8 +1,12 @@
 import { TimePeriod } from '../types';
 
-// Day: 05:30–18:30 | Peak: 18:30–22:30 | Off-peak: 22:30–05:30
+// Day: 05:30–18:30 | Peak: 18:30–22:30 | Off-peak: 22:30–05:30 (Sri Lanka local time)
+// Computed from UTC fields + a fixed +5:30 offset (Sri Lanka has no DST) so
+// this is correct regardless of the server/container's own system timezone -
+// getHours()/getMinutes() would silently use whatever TZ the OS is set to,
+// which is UTC on this deployment, shifting every boundary by 5.5 hours.
 export function getTimePeriod(date: Date = new Date()): TimePeriod {
-  const total = date.getHours() * 60 + date.getMinutes();
+  const total = (date.getUTCHours() * 60 + date.getUTCMinutes() + 330) % 1440;
   if (total >= 330 && total < 1110) return 'day';
   if (total >= 1110 && total < 1350) return 'peak';
   return 'off_peak';

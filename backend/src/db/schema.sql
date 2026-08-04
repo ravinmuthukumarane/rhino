@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS energy_meters (
   serial_number VARCHAR(255),
   device_id VARCHAR(50) UNIQUE,          -- MQTT bridge device id, e.g. "u155_10" (gateway last octet + Modbus unit)
   default_source VARCHAR(20) DEFAULT 'CEB' CHECK (default_source IN ('CEB', 'GENERATOR')),
+  plant_section VARCHAR(20),             -- physical section/incomer this meter is fed from, e.g. "P1", "P4"
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS flow_meters (
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
   model VARCHAR(255),
   fluid_type VARCHAR(100) DEFAULT 'diesel',
+  plant_section VARCHAR(20),             -- physical section/incomer this meter is fed from, e.g. "P1", "P4"
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
