@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { settingsApi, readingsApi } from '../services/api';
+import { settingsApi } from '../services/api';
 import { usePlant } from '../context/PlantContext';
+import { useSocket } from '../context/SocketContext';
 import { TrendingUp, AlertCircle, Zap, Droplets, Gauge } from 'lucide-react';
 
 export default function PlantOverviewPage() {
   const { selectedPlantId } = usePlant();
+  const { liveReadings } = useSocket();
 
   const { data: meters } = useQuery({
     queryKey: ['energy-meters', selectedPlantId],
@@ -22,38 +24,47 @@ export default function PlantOverviewPage() {
       ),
   });
 
-  const { data: readings } = useQuery({
-    queryKey: ['latest-readings', selectedPlantId],
-    queryFn: () =>
-      readingsApi.getLatest(selectedPlantId ? { plant_id: selectedPlantId } : {}).then((r) => r.data),
-    refetchInterval: 5000,
-  });
+  // No per-reading severity field on EnergyReading - derive from power
+  // factor using the same thresholds as the Dashboard's live PF indicator.
+  const getSeverity = (reading: any): 'critical' | 'warning' | 'normal' => {
+    const pf = reading?.power_factor != null ? parseFloat(String(reading.power_factor)) : null;
+    if (pf == null) return 'normal';
+    if (pf < 0.80) return 'critical';
+    if (pf < 0.85) return 'warning';
+    return 'normal';
+  };
 
   const getStatusColor = (reading: any) => {
     if (!reading) return 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-600';
-    if (reading.severity === 'critical') return 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700';
-    if (reading.severity === 'warning') return 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700';
+    const severity = getSeverity(reading);
+    if (severity === 'critical') return 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700';
+    if (severity === 'warning') return 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-300 dark:border-yellow-700';
     return 'bg-green-50 dark:bg-green-900/30 border-green-300 dark:border-green-700';
   };
 
   const getStatusText = (reading: any) => {
     if (!reading) return 'No data';
-    if (reading.severity === 'critical') return 'CRITICAL';
-    if (reading.severity === 'warning') return 'WARNING';
+    const severity = getSeverity(reading);
+    if (severity === 'critical') return 'CRITICAL';
+    if (severity === 'warning') return 'WARNING';
     return 'NORMAL';
   };
 
   const getStatusTextColor = (reading: any) => {
     if (!reading) return 'text-gray-600 dark:text-gray-400';
-    if (reading.severity === 'critical') return 'text-red-600 dark:text-red-400';
-    if (reading.severity === 'warning') return 'text-yellow-600 dark:text-yellow-400';
+    const severity = getSeverity(reading);
+    if (severity === 'critical') return 'text-red-600 dark:text-red-400';
+    if (severity === 'warning') return 'text-yellow-600 dark:text-yellow-400';
     return 'text-green-600 dark:text-green-400';
   };
 
-  const latestByMeter = (readings?.readings || []).reduce((acc: any, r: any) => {
-    if (!acc[r.meter_id]) acc[r.meter_id] = r;
-    return acc;
-  }, {});
+  const plantMeterReadings = selectedPlantId
+    ? liveReadings.get(selectedPlantId) ?? new Map()
+    : Array.from(liveReadings.values())[0] ?? new Map();
+  const latestByMeter: Record<string, any> = {};
+  for (const [meterId, payload] of plantMeterReadings) {
+    if (payload.energy) latestByMeter[meterId] = payload.energy;
+  }
 
   return (
     <div className="space-y-6">
@@ -87,27 +98,27 @@ export default function PlantOverviewPage() {
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Voltage</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.voltage_r?.toFixed(1) || '—'} V</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.voltage_r != null ? parseFloat(String(reading.voltage_r)).toFixed(1) : '—'} V</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Current</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.current_r?.toFixed(2) || '—'} A</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.current_r != null ? parseFloat(String(reading.current_r)).toFixed(2) : '—'} A</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Power</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw?.toFixed(2) || '—'} kW</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw != null ? parseFloat(String(reading.power_kw)).toFixed(2) : '—'} kW</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">KVA</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva?.toFixed(2) || '—'}</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva != null ? parseFloat(String(reading.power_kva)).toFixed(2) : '—'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">PF</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor?.toFixed(3) || '—'}</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? parseFloat(String(reading.power_factor)).toFixed(3) : '—'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">3rd Harmonic</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.third_harmonic?.toFixed(2) || '—'}%</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.third_harmonic_r != null ? parseFloat(String(reading.third_harmonic_r)).toFixed(2) : '—'}%</span>
                       </div>
                     </div>
                   ) : (
