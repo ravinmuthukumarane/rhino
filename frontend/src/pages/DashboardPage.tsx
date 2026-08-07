@@ -66,11 +66,128 @@ const TT = ({ active, payload, label }: any) => active && payload?.length
   ? <div className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-2 text-xs"><p className="text-gray-700 dark:text-gray-300 mb-1">{label}</p>{payload.map((p: any) => <div key={p.name} className="flex items-center gap-1.5 mb-0.5"><div className="w-2 h-2 rounded-full" style={{ background: p.color }} /><span className="text-gray-600 dark:text-gray-400">{p.name}:</span><span className="text-gray-900 dark:text-gray-100 font-medium">{p.value}</span></div>)}</div>
   : null;
 
+// One column of the Live Trend / Real-Time Readings / Phase Detail blocks,
+// scoped to a single plant section (e.g. "P1" or "P4") so the two sections
+// can be compared side by side instead of being merged into one plant-wide view.
+function SectionColumn({ section, meterReadings }: { section: string; meterReadings: LiveReadingPayload[] }) {
+  const [liveHistory, setLiveHistory] = useState<any[]>([]);
+  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
+
+  const energyReadings = meterReadings.map((r) => r.energy).filter((x): x is EnergyReading => x != null);
+  const e = aggregateEnergyReadings(energyReadings);
+  const d = meterReadings.filter((r) => r.diesel != null)
+    .sort((a, b) => new Date(b.diesel!.recorded_at).getTime() - new Date(a.diesel!.recorded_at).getTime())[0]?.diesel;
+  const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
+
+  const prevRef = { current: liveHistory };
+  if (e && (prevRef.current.length === 0 || prevRef.current[prevRef.current.length - 1]?.ts !== e.recorded_at)) {
+    const point: any = {
+      ts: e.recorded_at,
+      time: format(new Date(e.recorded_at), 'HH:mm:ss'),
+      VR: +parseFloat(String(e.voltage_r)).toFixed(1),
+      VY: +parseFloat(String(e.voltage_y)).toFixed(1),
+      VB: +parseFloat(String(e.voltage_b)).toFixed(1),
+      IR: +parseFloat(String(e.current_r)).toFixed(1),
+      IY: +parseFloat(String(e.current_y)).toFixed(1),
+      IB: +parseFloat(String(e.current_b)).toFixed(1),
+      'kW': +parseFloat(String(e.power_kw)).toFixed(2),
+      'kVA': +parseFloat(String(e.power_kva)).toFixed(2),
+      PF: +parseFloat(String(e.power_factor)).toFixed(3),
+      'H3-R': +parseFloat(String(e.third_harmonic_r ?? 0)).toFixed(2),
+      'H3-Y': +parseFloat(String(e.third_harmonic_y ?? 0)).toFixed(2),
+      'H3-B': +parseFloat(String(e.third_harmonic_b ?? 0)).toFixed(2),
+    };
+    setTimeout(() => setLiveHistory((prev) => [...prev.slice(-(MAX_LIVE - 1)), point]), 0);
+  }
+
+  const liveLines: Record<string, { key: string; color: string }[]> = {
+    voltage: [{ key:'VR', color:'#ef4444' }, { key:'VY', color:'#eab308' }, { key:'VB', color:'#3b82f6' }],
+    current: [{ key:'IR', color:'#ef4444' }, { key:'IY', color:'#eab308' }, { key:'IB', color:'#3b82f6' }],
+    power:   [{ key:'kW', color:'#22c55e' }, { key:'kVA', color:'#8b5cf6' }],
+    pf:      [{ key:'PF', color:'#06b6d4' }],
+    harmonic:[{ key:'H3-R', color:'#ef4444' }, { key:'H3-Y', color:'#eab308' }, { key:'H3-B', color:'#3b82f6' }],
+  };
+
+  const avgV = e ? ((+e.voltage_r + +e.voltage_y + +e.voltage_b) / 3).toFixed(1) : null;
+  const avgI = e ? ((+e.current_r + +e.current_y + +e.current_b) / 3).toFixed(1) : null;
+  const avgH3 = e?.third_harmonic_r != null ? (((e.third_harmonic_r ?? 0) + (e.third_harmonic_y ?? 0) + (e.third_harmonic_b ?? 0)) / 3).toFixed(2) : null;
+
+  const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
+  const pfColor = !e?.power_factor ? 'primary' : +e.power_factor < 0.80 ? 'red' : +e.power_factor < 0.85 ? 'yellow' : 'green';
+  const h3Color = !avgH3 ? 'cyan' : +avgH3 > 5 ? 'red' : +avgH3 > 3 ? 'yellow' : 'cyan';
+
+  return (
+    <div className="space-y-5">
+      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Plant {section.replace(/^P/i, '')} <span className="text-xs font-normal text-gray-500">({section})</span></p>
+
+      {/* Live trend chart */}
+      <div className="card">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Live Trend</p>
+          <div className="flex flex-wrap gap-1 ml-2">
+            {(['voltage','current','power','pf','harmonic'] as const).map((m) => (
+              <button key={m} onClick={() => setLiveMetric(m)}
+                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${liveMetric === m ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+                {m === 'harmonic' ? '3rd Harmonic' : m.charAt(0).toUpperCase() + m.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {liveHistory.length === 0
+          ? <div className="h-48 flex items-center justify-center text-gray-600 text-sm">Waiting for live data…</div>
+          : <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={liveHistory} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <Tooltip content={<TT />} />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
+                {(liveLines[liveMetric] ?? []).map(({ key, color }) => (
+                  <Line key={key} type="monotone" dataKey={key} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+        }
+      </div>
+
+      {/* Real-time metrics grid */}
+      <div>
+        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">Real-Time Readings</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          <MetricCard label="Avg Voltage" value={avgV} unit="V" color={vColor} />
+          <MetricCard label="Avg Current" value={avgI} unit="A" color="blue" />
+          <MetricCard label="Power (kW)" value={e ? parseFloat(String(e.power_kw)).toFixed(2) : null} color="green" />
+          <MetricCard label="KVA (Max Demand)" value={e ? parseFloat(String(e.power_kva)).toFixed(2) : null} color="purple" />
+          <MetricCard label="Power Factor" value={e ? parseFloat(String(e.power_factor)).toFixed(3) : null} color={pfColor} />
+          <MetricCard label="3rd Harmonic" value={avgH3} unit="%" color={h3Color} sub="Avg R/Y/B" />
+        </div>
+      </div>
+
+      {/* Phase-level detail */}
+      <div>
+        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">Three-Phase Detail</p>
+        <div className="grid grid-cols-3 gap-2.5">
+          <MetricCard label="V-R" value={e ? parseFloat(String(e.voltage_r)).toFixed(1) : null} unit="V" color="red" />
+          <MetricCard label="V-Y" value={e ? parseFloat(String(e.voltage_y)).toFixed(1) : null} unit="V" color="yellow" />
+          <MetricCard label="V-B" value={e ? parseFloat(String(e.voltage_b)).toFixed(1) : null} unit="V" color="blue" />
+          <MetricCard label="I-R" value={e ? parseFloat(String(e.current_r)).toFixed(1) : null} unit="A" color="red" />
+          <MetricCard label="I-Y" value={e ? parseFloat(String(e.current_y)).toFixed(1) : null} unit="A" color="yellow" />
+          <MetricCard label="I-B" value={e ? parseFloat(String(e.current_b)).toFixed(1) : null} unit="A" color="blue" />
+          <MetricCard label="3H-R" value={e?.third_harmonic_r != null ? parseFloat(String(e.third_harmonic_r)).toFixed(2) : null} unit="%" color="red" />
+          <MetricCard label="3H-Y" value={e?.third_harmonic_y != null ? parseFloat(String(e.third_harmonic_y)).toFixed(2) : null} unit="%" color="yellow" />
+          <MetricCard label="3H-B" value={e?.third_harmonic_b != null ? parseFloat(String(e.third_harmonic_b)).toFixed(2) : null} unit="%" color="blue" />
+          <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
+          <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
+          <MetricCard label="Flow Rate" value={d ? parseFloat(String(d.flow_rate)).toFixed(2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { liveReadings, activeAlerts } = useSocket();
   const { selectedPlantId } = usePlant();
-  const [liveHistory, setLiveHistory] = useState<any[]>([]);
-  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
   const [consumPeriod, setConsumPeriod] = useState<'daily'|'monthly'|'yearly'>('monthly');
 
   // All meters currently reporting for the selected plant (or the first
@@ -79,17 +196,6 @@ export default function DashboardPage() {
     ? liveReadings.get(selectedPlantId) ?? new Map()
     : Array.from(liveReadings.values())[0] ?? new Map();
   const meterReadings = Array.from(plantMeters.values());
-
-  const energyReadings = meterReadings
-    .map((r) => r.energy)
-    .filter((e): e is EnergyReading => e != null);
-  const e = aggregateEnergyReadings(energyReadings);
-
-  const dieselReadings = meterReadings.filter((r) => r.diesel != null);
-  const d = dieselReadings.sort((a, b) => new Date(b.diesel!.recorded_at).getTime() - new Date(a.diesel!.recorded_at).getTime())[0]?.diesel;
-
-  const gen = meterReadings.find((r) => r.generator != null)?.generator;
-  const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
 
   // The plant has multiple physical sections (P1, P4, ...), each fed by its
   // own incomer/generator - a single plant-wide CEB/Generator indicator
@@ -113,30 +219,9 @@ export default function DashboardPage() {
       section,
       isCEB: sectionEnergy?.source !== 'GENERATOR',
       gen: readingsInSection.find((r) => r.generator != null)?.generator,
+      readings: readingsInSection,
     };
   });
-
-  // Accumulate live history
-  const prevRef = { current: liveHistory };
-  if (e && (prevRef.current.length === 0 || prevRef.current[prevRef.current.length - 1]?.ts !== e.recorded_at)) {
-    const point: any = {
-      ts: e.recorded_at,
-      time: format(new Date(e.recorded_at), 'HH:mm:ss'),
-      VR: +parseFloat(String(e.voltage_r)).toFixed(1),
-      VY: +parseFloat(String(e.voltage_y)).toFixed(1),
-      VB: +parseFloat(String(e.voltage_b)).toFixed(1),
-      IR: +parseFloat(String(e.current_r)).toFixed(1),
-      IY: +parseFloat(String(e.current_y)).toFixed(1),
-      IB: +parseFloat(String(e.current_b)).toFixed(1),
-      'kW': +parseFloat(String(e.power_kw)).toFixed(2),
-      'kVA': +parseFloat(String(e.power_kva)).toFixed(2),
-      PF: +parseFloat(String(e.power_factor)).toFixed(3),
-      'H3-R': +parseFloat(String(e.third_harmonic_r ?? 0)).toFixed(2),
-      'H3-Y': +parseFloat(String(e.third_harmonic_y ?? 0)).toFixed(2),
-      'H3-B': +parseFloat(String(e.third_harmonic_b ?? 0)).toFixed(2),
-    };
-    setTimeout(() => setLiveHistory((prev) => [...prev.slice(-(MAX_LIVE - 1)), point]), 0);
-  }
 
   const { data: statsData } = useQuery({
     queryKey: ['dashboard-stats', selectedPlantId],
@@ -174,22 +259,6 @@ export default function DashboardPage() {
     if (consumPeriod === 'monthly') return (monthlyData?.diesel ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), Liters: +r.total_liters||0 }));
     return (yearlyData?.diesel ?? []).slice().reverse().map((r: any) => ({ label: String(r.year), Liters: +r.total_liters||0 }));
   })();
-
-  const liveLines: Record<string, { key: string; color: string }[]> = {
-    voltage: [{ key:'VR', color:'#ef4444' }, { key:'VY', color:'#eab308' }, { key:'VB', color:'#3b82f6' }],
-    current: [{ key:'IR', color:'#ef4444' }, { key:'IY', color:'#eab308' }, { key:'IB', color:'#3b82f6' }],
-    power:   [{ key:'kW', color:'#22c55e' }, { key:'kVA', color:'#8b5cf6' }],
-    pf:      [{ key:'PF', color:'#06b6d4' }],
-    harmonic:[{ key:'H3-R', color:'#ef4444' }, { key:'H3-Y', color:'#eab308' }, { key:'H3-B', color:'#3b82f6' }],
-  };
-
-  const avgV = e ? ((+e.voltage_r + +e.voltage_y + +e.voltage_b) / 3).toFixed(1) : null;
-  const avgI = e ? ((+e.current_r + +e.current_y + +e.current_b) / 3).toFixed(1) : null;
-  const avgH3 = e?.third_harmonic_r != null ? (((e.third_harmonic_r ?? 0) + (e.third_harmonic_y ?? 0) + (e.third_harmonic_b ?? 0)) / 3).toFixed(2) : null;
-
-  const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
-  const pfColor = !e?.power_factor ? 'primary' : +e.power_factor < 0.80 ? 'red' : +e.power_factor < 0.85 ? 'yellow' : 'green';
-  const h3Color = !avgH3 ? 'cyan' : +avgH3 > 5 ? 'red' : +avgH3 > 3 ? 'yellow' : 'cyan';
 
   const today = statsData?.today ?? {};
   const unack = activeAlerts.filter((a) => !a.acknowledged).length;
@@ -239,35 +308,14 @@ export default function DashboardPage() {
         </div>
       ))}
 
-      {/* Live trend chart */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Live Trend</p>
-          <div className="flex flex-wrap gap-1 ml-2">
-            {(['voltage','current','power','pf','harmonic'] as const).map((m) => (
-              <button key={m} onClick={() => setLiveMetric(m)}
-                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${liveMetric === m ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-                {m === 'harmonic' ? '3rd Harmonic' : m.charAt(0).toUpperCase() + m.slice(1)}
-              </button>
-            ))}
-          </div>
+      {/* Plant 1 / Plant 4 side-by-side sections */}
+      {sectionData.length > 0 && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+          {sectionData.map(({ section, readings }) => (
+            <SectionColumn key={section} section={section} meterReadings={readings} />
+          ))}
         </div>
-        {liveHistory.length === 0
-          ? <div className="h-48 flex items-center justify-center text-gray-600 text-sm">Waiting for live data…</div>
-          : <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={liveHistory} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                <Tooltip content={<TT />} />
-                <Legend wrapperStyle={{ fontSize: 11, color: '#9ca3af' }} />
-                {(liveLines[liveMetric] ?? []).map(({ key, color }) => (
-                  <Line key={key} type="monotone" dataKey={key} stroke={color} dot={false} strokeWidth={1.5} isAnimationActive={false} />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-        }
-      </div>
+      )}
 
       {/* Consumption charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -315,38 +363,6 @@ export default function DashboardPage() {
               <Area type="monotone" dataKey="Liters" stroke="#f97316" fill="#f9731620" strokeWidth={2} />
             </AreaChart>
           </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Real-time metrics grid */}
-      <div>
-        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">Real-Time Readings</p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-          <MetricCard label="Avg Voltage" value={avgV} unit="V" color={vColor} />
-          <MetricCard label="Avg Current" value={avgI} unit="A" color="blue" />
-          <MetricCard label="Power (kW)" value={e ? parseFloat(String(e.power_kw)).toFixed(2) : null} color="green" />
-          <MetricCard label="KVA (Max Demand)" value={e ? parseFloat(String(e.power_kva)).toFixed(2) : null} color="purple" />
-          <MetricCard label="Power Factor" value={e ? parseFloat(String(e.power_factor)).toFixed(3) : null} color={pfColor} />
-          <MetricCard label="3rd Harmonic" value={avgH3} unit="%" color={h3Color} sub="Avg R/Y/B" />
-        </div>
-      </div>
-
-      {/* Phase-level detail */}
-      <div>
-        <p className="text-xs text-gray-500 uppercase tracking-wider font-medium mb-2">Three-Phase Detail</p>
-        <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5">
-          <MetricCard label="V-R" value={e ? parseFloat(String(e.voltage_r)).toFixed(1) : null} unit="V" color="red" />
-          <MetricCard label="V-Y" value={e ? parseFloat(String(e.voltage_y)).toFixed(1) : null} unit="V" color="yellow" />
-          <MetricCard label="V-B" value={e ? parseFloat(String(e.voltage_b)).toFixed(1) : null} unit="V" color="blue" />
-          <MetricCard label="I-R" value={e ? parseFloat(String(e.current_r)).toFixed(1) : null} unit="A" color="red" />
-          <MetricCard label="I-Y" value={e ? parseFloat(String(e.current_y)).toFixed(1) : null} unit="A" color="yellow" />
-          <MetricCard label="I-B" value={e ? parseFloat(String(e.current_b)).toFixed(1) : null} unit="A" color="blue" />
-          <MetricCard label="3H-R" value={e?.third_harmonic_r != null ? parseFloat(String(e.third_harmonic_r)).toFixed(2) : null} unit="%" color="red" />
-          <MetricCard label="3H-Y" value={e?.third_harmonic_y != null ? parseFloat(String(e.third_harmonic_y)).toFixed(2) : null} unit="%" color="yellow" />
-          <MetricCard label="3H-B" value={e?.third_harmonic_b != null ? parseFloat(String(e.third_harmonic_b)).toFixed(2) : null} unit="%" color="blue" />
-          <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
-          <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
-          <MetricCard label="Flow Rate" value={d ? parseFloat(String(d.flow_rate)).toFixed(2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
         </div>
       </div>
     </div>
