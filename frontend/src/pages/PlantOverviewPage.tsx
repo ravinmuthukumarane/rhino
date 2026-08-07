@@ -62,8 +62,10 @@ export default function PlantOverviewPage() {
     ? liveReadings.get(selectedPlantId) ?? new Map()
     : Array.from(liveReadings.values())[0] ?? new Map();
   const latestByMeter: Record<string, any> = {};
+  const latestFlowByMeter: Record<string, any> = {};
   for (const [meterId, payload] of plantMeterReadings) {
     if (payload.energy) latestByMeter[meterId] = payload.energy;
+    if (payload.diesel) latestFlowByMeter[meterId] = payload.diesel;
   }
 
   return (
@@ -139,14 +141,45 @@ export default function PlantOverviewPage() {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Flow Meters</h2>
             <span className="ml-auto text-xs text-gray-500">({flowmeters.length} meters)</span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {flowmeters.map((meter: any) => (
-              <div key={meter.meter_id} className="card border border-blue-300 dark:border-blue-700/50 bg-blue-50 dark:bg-blue-900/20 p-4">
-                <p className="font-semibold text-blue-800 dark:text-blue-200 text-sm">{meter.name}</p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{meter.meter_id}</p>
-                <p className="text-xs text-blue-700 dark:text-blue-300 mt-2">Flow Meter</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {flowmeters.map((meter: any) => {
+              const reading = latestFlowByMeter[meter.meter_id];
+              return (
+                <div
+                  key={meter.meter_id}
+                  className={`card border-2 p-4 transition-all ${reading ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700/50' : 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-600'}`}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{meter.name}</p>
+                      <p className="text-xs text-gray-500">{meter.meter_id}</p>
+                    </div>
+                    <div className={`text-xs font-bold px-2 py-1 rounded ${reading ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>
+                      {reading ? 'LIVE' : 'NO DATA'}
+                    </div>
+                  </div>
+
+                  {reading ? (
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Flow Rate</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? parseFloat(String(reading.flow_rate)).toFixed(2) : '—'} L/hr</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Total Volume</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? parseFloat(String(reading.total_volume)).toFixed(2) : '—'} L</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600 dark:text-gray-400">Last Reading</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.recorded_at ? new Date(reading.recorded_at).toLocaleTimeString() : '—'}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No readings yet</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
