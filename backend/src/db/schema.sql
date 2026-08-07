@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS flow_meters (
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
   model VARCHAR(255),
   fluid_type VARCHAR(100) DEFAULT 'diesel',
+  device_id VARCHAR(50) UNIQUE,           -- MQTT bridge device id, e.g. "u119_01" (gateway last octet + Modbus unit)
   plant_section VARCHAR(20),             -- physical section/incomer this meter is fed from, e.g. "P1", "P4"
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),

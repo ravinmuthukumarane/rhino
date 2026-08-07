@@ -37,11 +37,15 @@ export async function startMQTT(io: Server): Promise<void> {
     try {
       const data = JSON.parse(message.toString());
 
-      // A single shared topic carries both energy and diesel readings, so
-      // routing is by an explicit 'type' field in the payload rather than
-      // by topic prefix (which is how per-meter topics used to route).
+      // A single shared topic carries energy, diesel, and flow-meter
+      // readings. Diesel payloads use an explicit 'type' field; the flow
+      // meter gateway instead reuses the device_id/tags envelope shared with
+      // energy meters, distinguishable by tags.flow_l1 being present (no
+      // voltage tag). Route on shape, not just the 'type' field.
       if (data.type === 'diesel') {
         await handleDieselReading(data, io);
+      } else if (data.tags && typeof data.tags.flow_l1 === 'number') {
+        await handleFlowTelemetry(data, io);
       } else {
         await handleEnergyReading(data, io);
       }
@@ -75,6 +79,9 @@ interface DeviceTelemetry {
     power_l1?: number; power_l2?: number; power_l3?: number;
     total_power?: number; total_app?: number; total_pf?: number;
     freq?: number; import_kwh?: number;
+    // Flow meter gateway (shares this envelope instead of a distinct shape)
+    flow_l1?: number; flow_l2?: number; flow_status?: number;
+    flow_calib?: number; flow_scale?: number;
   };
 }
 
@@ -211,6 +218,42 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
   }
 }
 
+async function storeDieselReading(
+  meterId: string,
+  plantId: string | null,
+  flowRate: number,
+  totalVolume: number | null,
+  timestamp: string | number | undefined,
+  io: Server
+): Promise<void> {
+  // Insert diesel/flow reading
+  const { rows: [reading] } = await pool.query(
+    `INSERT INTO diesel_readings (meter_id, plant_id, flow_rate, total_volume, recorded_at)
+     VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+    [meterId, plantId, flowRate, totalVolume, new Date(timestamp || Date.now())]
+  );
+
+  // Update daily summary
+  const today = new Date(timestamp || Date.now()).toISOString().split('T')[0];
+  const dL = (flowRate || 0) * (5 / 3600);
+
+  await pool.query(
+    `INSERT INTO daily_diesel_summary (summary_date, plant_id, meter_id, total_liters, generator_run_hours)
+     VALUES ($1,$2,$3,$4,$5)
+     ON CONFLICT (summary_date, meter_id) DO UPDATE SET
+       total_liters = daily_diesel_summary.total_liters + EXCLUDED.total_liters,
+       generator_run_hours = daily_diesel_summary.generator_run_hours + EXCLUDED.generator_run_hours,
+       updated_at = NOW()`,
+    [today, plantId, meterId, dL, 5 / 3600]
+  );
+
+  io.emit('live_reading', {
+    diesel: reading,
+    plant_id: plantId,
+    meter_id: meterId,
+  });
+}
+
 async function handleDieselReading(data: MeterData, io: Server): Promise<void> {
   try {
     if (!data.meter_id || typeof data.flow_rate !== 'number') {
@@ -231,42 +274,41 @@ async function handleDieselReading(data: MeterData, io: Server): Promise<void> {
       plantId = rows[0].plant_id;
     }
 
-    // Insert diesel reading
-    const { rows: [reading] } = await pool.query(
-      `INSERT INTO diesel_readings (meter_id, plant_id, flow_rate, total_volume, recorded_at)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [
-        data.meter_id,
-        plantId,
-        data.flow_rate,
-        data.total_volume,
-        new Date(data.timestamp || Date.now()),
-      ]
-    );
-
-    // Update daily summary
-    const today = new Date(data.timestamp || Date.now()).toISOString().split('T')[0];
-    const dL = (data.flow_rate || 0) * (5 / 3600);
-
-    await pool.query(
-      `INSERT INTO daily_diesel_summary (summary_date, plant_id, meter_id, total_liters, generator_run_hours)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (summary_date, meter_id) DO UPDATE SET
-         total_liters = daily_diesel_summary.total_liters + EXCLUDED.total_liters,
-         generator_run_hours = daily_diesel_summary.generator_run_hours + EXCLUDED.generator_run_hours,
-         updated_at = NOW()`,
-      [today, plantId, data.meter_id, dL, 5 / 3600]
-    );
-
-    io.emit('live_reading', {
-      diesel: reading,
-      plant_id: plantId,
-      meter_id: data.meter_id,
-    });
-
+    await storeDieselReading(data.meter_id, plantId, data.flow_rate, data.total_volume ?? null, data.timestamp, io);
     console.log(`[MQTT] Diesel reading stored: ${data.meter_id}`);
   } catch (err) {
     console.error('[MQTT] Error storing diesel reading:', (err as Error).message);
+  }
+}
+
+// The flow meter gateway shares the same device_id/tags envelope as energy
+// meters instead of the explicit { type: 'diesel', meter_id, flow_rate }
+// shape - it has no cumulative total, only an instantaneous flow_l1 (L1
+// register) reading, so total_volume is left null here rather than guessed.
+async function handleFlowTelemetry(data: DeviceTelemetry, io: Server): Promise<void> {
+  try {
+    const deviceId = data.device_id;
+    const flowRate = data.tags?.flow_l1;
+    if (!deviceId || typeof flowRate !== 'number') {
+      console.error('[MQTT] Invalid flow telemetry:', data);
+      return;
+    }
+
+    const { rows } = await pool.query(
+      'SELECT meter_id, plant_id FROM flow_meters WHERE device_id = $1',
+      [deviceId]
+    );
+    if (!rows[0]) {
+      console.error('[MQTT] Unknown flow device_id:', deviceId);
+      return;
+    }
+    const meterId: string = rows[0].meter_id;
+    const plantId: string | null = rows[0].plant_id;
+
+    await storeDieselReading(meterId, plantId, flowRate, null, data.timestamp, io);
+    console.log(`[MQTT] Flow reading stored: ${meterId} (device ${deviceId})`);
+  } catch (err) {
+    console.error('[MQTT] Error storing flow reading:', (err as Error).message);
   }
 }
 
