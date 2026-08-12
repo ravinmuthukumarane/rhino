@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useQueries } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Activity, Zap, Gauge, BarChart2, Droplets, Cpu, TrendingUp } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useSocket } from '../context/SocketContext';
@@ -258,6 +258,109 @@ function ConsumptionCharts({ consumChartData, dieselChartData, consumPeriod, set
   );
 }
 
+// Per-section visual identity (border/tint/badge) so Plant 1 and Plant 4 read
+// as clearly separate regions rather than two unlabeled grid cells. Indexed
+// by section position, so a third/fourth section still gets a distinct look.
+const SECTION_THEMES = [
+  { ring: 'ring-1 ring-blue-200 dark:ring-blue-900/50', bg: 'bg-blue-50/50 dark:bg-blue-950/10', border: 'border-blue-200 dark:border-blue-900/50', badge: 'bg-blue-600 dark:bg-blue-500' },
+  { ring: 'ring-1 ring-purple-200 dark:ring-purple-900/50', bg: 'bg-purple-50/50 dark:bg-purple-950/10', border: 'border-purple-200 dark:border-purple-900/50', badge: 'bg-purple-600 dark:bg-purple-500' },
+  { ring: 'ring-1 ring-emerald-200 dark:ring-emerald-900/50', bg: 'bg-emerald-50/50 dark:bg-emerald-950/10', border: 'border-emerald-200 dark:border-emerald-900/50', badge: 'bg-emerald-600 dark:bg-emerald-500' },
+  { ring: 'ring-1 ring-amber-200 dark:ring-amber-900/50', bg: 'bg-amber-50/50 dark:bg-amber-950/10', border: 'border-amber-200 dark:border-amber-900/50', badge: 'bg-amber-600 dark:bg-amber-500' },
+];
+
+// Everything for one plant section (P1, P4, ...): its own Daily/Monthly/Yearly
+// toggle and the stats/consumption queries that depend on it, so switching
+// one plant's period never touches another plant's charts.
+function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, selectedPlantId, theme }: {
+  section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
+}) {
+  const [consumPeriod, setConsumPeriod] = useState<ConsumPeriod>('monthly');
+
+  const { data: statsData } = useQuery({
+    queryKey: ['dashboard-stats', selectedPlantId, section],
+    queryFn: () => readingsApi.getDashboardStats({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
+    refetchInterval: 60000,
+  });
+
+  const { data: dailyData } = useQuery({
+    queryKey: ['daily-summary', selectedPlantId, section],
+    queryFn: () => readingsApi.getDailySummary({ plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
+    enabled: consumPeriod === 'daily',
+    refetchInterval: 60000,
+  });
+
+  const { data: monthlyData } = useQuery({
+    queryKey: ['monthly-summary', selectedPlantId, section, new Date().getFullYear()],
+    queryFn: () => readingsApi.getMonthlySummary({ year: new Date().getFullYear(), plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
+    enabled: consumPeriod === 'monthly',
+  });
+
+  const { data: yearlyData } = useQuery({
+    queryKey: ['yearly-summary', selectedPlantId, section],
+    queryFn: () => readingsApi.getYearlySummary({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
+    enabled: consumPeriod === 'yearly',
+  });
+
+  const today = statsData?.today ?? {};
+  const consumChartData = buildConsumChartData(consumPeriod, dailyData, monthlyData, yearlyData);
+  const dieselChartData = buildDieselChartData(consumPeriod, dailyData, monthlyData, yearlyData);
+
+  return (
+    <div className={`rounded-2xl border ${theme.border} ${theme.bg} ${theme.ring} p-4 sm:p-5 space-y-5`}>
+      <div className="flex items-center gap-2.5">
+        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-white text-sm font-bold flex-shrink-0 ${theme.badge}`}>
+          {section.replace(/^P/i, '')}
+        </span>
+        <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Plant {section.replace(/^P/i, '')}</p>
+        <span className="text-xs font-normal text-gray-500">({section})</span>
+      </div>
+
+      {/* Today stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" sub={`CEB: ${fmt.kwh(today?.energy?.ceb_kwh)}`} />
+        <MetricCard label="Today Diesel" value={fmt.lit(today?.diesel?.total_liters)} color="orange" sub={`Run: ${fmt.n2(today?.diesel?.run_hours)} hrs`} />
+        <MetricCard label="Active Alerts" value={statsData?.activeAlerts ?? '—'} color={statsData?.activeAlerts > 0 ? 'red' : 'green'} sub={`${statsData?.todayInterruptions ?? 0} interruptions`} />
+        <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(today?.energy?.avg_power_factor)}`} />
+      </div>
+
+      {/* Power source indicator */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+            <Zap className={`w-5 h-5 ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`} />
+          </div>
+          <div>
+            <p className={`font-semibold text-sm ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>CEB {sectionIsCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
+            <p className="text-xs text-gray-500">Grid Supply</p>
+          </div>
+        </div>
+        <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
+            <Cpu className={`w-5 h-5 ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`} />
+          </div>
+          <div>
+            <p className={`font-semibold text-sm ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`}>Generator {sectionGen?.status === 'ON' && !sectionIsCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
+            <p className="text-xs text-gray-500">{sectionGen?.status ?? 'STANDBY'} — {sectionGen?.generator_id ?? '—'}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Live trend / real-time / phase-level detail */}
+      <SectionColumn meterReadings={readings} />
+
+      {/* Consumption charts - this section's own Daily/Monthly/Yearly toggle */}
+      <div className="space-y-5">
+        <ConsumptionCharts
+          consumChartData={consumChartData}
+          dieselChartData={dieselChartData}
+          consumPeriod={consumPeriod}
+          setConsumPeriod={setConsumPeriod}
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { liveReadings, activeAlerts } = useSocket();
   const { selectedPlantId } = usePlant();
@@ -294,43 +397,6 @@ export default function DashboardPage() {
       gen: readingsInSection.find((r) => r.generator != null)?.generator,
       readings: readingsInSection,
     };
-  });
-
-  // Per-section "Today" stats and consumption history - each section gets
-  // its own dashboard-stats/daily/monthly/yearly query (filtered server-side
-  // via plant_section) so Plant 1 and Plant 4 never share a number. useQueries
-  // (not a useQuery per section) because `sections` has a dynamic length.
-  const statsQueries = useQueries({
-    queries: sections.map((section) => ({
-      queryKey: ['dashboard-stats', selectedPlantId, section],
-      queryFn: () => readingsApi.getDashboardStats({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
-      refetchInterval: 60000,
-    })),
-  });
-
-  const dailyQueries = useQueries({
-    queries: sections.map((section) => ({
-      queryKey: ['daily-summary', selectedPlantId, section],
-      queryFn: () => readingsApi.getDailySummary({ plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
-      enabled: consumPeriod === 'daily',
-      refetchInterval: 60000,
-    })),
-  });
-
-  const monthlyQueries = useQueries({
-    queries: sections.map((section) => ({
-      queryKey: ['monthly-summary', selectedPlantId, section, new Date().getFullYear()],
-      queryFn: () => readingsApi.getMonthlySummary({ year: new Date().getFullYear(), plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
-      enabled: consumPeriod === 'monthly',
-    })),
-  });
-
-  const yearlyQueries = useQueries({
-    queries: sections.map((section) => ({
-      queryKey: ['yearly-summary', selectedPlantId, section],
-      queryFn: () => readingsApi.getYearlySummary({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
-      enabled: consumPeriod === 'yearly',
-    })),
   });
 
   // Plant-wide fallback for installs that haven't tagged meters with a
@@ -379,63 +445,14 @@ export default function DashboardPage() {
       )}
 
       {sectionData.length > 0 ? (
-        /* Plant 1 / Plant 4 side-by-side - every stat, indicator, chart and
-           trend below is scoped to that section's own meters. */
+        /* Plant 1 / Plant 4 side-by-side, each in its own tinted/bordered
+           card so the two are visually unmistakable - every stat, indicator,
+           chart and trend inside is scoped to that section's own meters and
+           has its own independent Daily/Monthly/Yearly toggle. */
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-          {sectionData.map(({ section, isCEB: sectionIsCEB, gen: sectionGen, readings }, i) => {
-            const sectionToday = statsQueries[i]?.data?.today ?? {};
-            const sectionStats = statsQueries[i]?.data;
-            const sectionConsumChartData = buildConsumChartData(consumPeriod, dailyQueries[i]?.data, monthlyQueries[i]?.data, yearlyQueries[i]?.data);
-            const sectionDieselChartData = buildDieselChartData(consumPeriod, dailyQueries[i]?.data, monthlyQueries[i]?.data, yearlyQueries[i]?.data);
-            return (
-              <div key={section} className="space-y-5">
-                <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Plant {section.replace(/^P/i, '')} <span className="text-xs font-normal text-gray-500">({section})</span></p>
-
-                {/* Today stats row */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <MetricCard label="Today Energy" value={fmt.kwh(sectionToday?.energy?.total_kwh)} color="primary" sub={`CEB: ${fmt.kwh(sectionToday?.energy?.ceb_kwh)}`} />
-                  <MetricCard label="Today Diesel" value={fmt.lit(sectionToday?.diesel?.total_liters)} color="orange" sub={`Run: ${fmt.n2(sectionToday?.diesel?.run_hours)} hrs`} />
-                  <MetricCard label="Active Alerts" value={sectionStats?.activeAlerts ?? '—'} color={sectionStats?.activeAlerts > 0 ? 'red' : 'green'} sub={`${sectionStats?.todayInterruptions ?? 0} interruptions`} />
-                  <MetricCard label="Max KVA Today" value={fmt.kva(sectionToday?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(sectionToday?.energy?.avg_power_factor)}`} />
-                </div>
-
-                {/* Power source indicator */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${sectionIsCEB ? 'bg-green-50 dark:bg-green-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                      <Zap className={`w-5 h-5 ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`} />
-                    </div>
-                    <div>
-                      <p className={`font-semibold text-sm ${sectionIsCEB ? 'text-green-700 dark:text-green-300' : 'text-gray-500'}`}>CEB {sectionIsCEB && <span className="inline-block w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}</p>
-                      <p className="text-xs text-gray-500">Grid Supply</p>
-                    </div>
-                  </div>
-                  <div className={`border rounded-xl p-3 flex items-center gap-3 col-span-2 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-300 dark:border-orange-700/40' : 'bg-gray-100 dark:bg-gray-800/30 border-gray-300 dark:border-gray-700/30'}`}>
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${!sectionIsCEB ? 'bg-orange-50 dark:bg-orange-800/60' : 'bg-gray-100 dark:bg-gray-800'}`}>
-                      <Cpu className={`w-5 h-5 ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`} />
-                    </div>
-                    <div>
-                      <p className={`font-semibold text-sm ${!sectionIsCEB ? 'text-orange-700 dark:text-orange-300' : 'text-gray-500'}`}>Generator {sectionGen?.status === 'ON' && !sectionIsCEB && <span className="inline-block w-2 h-2 bg-orange-400 rounded-full animate-pulse ml-1" />}</p>
-                      <p className="text-xs text-gray-500">{sectionGen?.status ?? 'STANDBY'} — {sectionGen?.generator_id ?? '—'}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Live trend / real-time / phase-level detail */}
-                <SectionColumn meterReadings={readings} />
-
-                {/* Consumption charts */}
-                <div className="space-y-5">
-                  <ConsumptionCharts
-                    consumChartData={sectionConsumChartData}
-                    dieselChartData={sectionDieselChartData}
-                    consumPeriod={consumPeriod}
-                    setConsumPeriod={setConsumPeriod}
-                  />
-                </div>
-              </div>
-            );
-          })}
+          {sectionData.map((sd, i) => (
+            <SectionBlock key={sd.section} {...sd} selectedPlantId={selectedPlantId} theme={SECTION_THEMES[i % SECTION_THEMES.length]} />
+          ))}
         </div>
       ) : (
         <>
