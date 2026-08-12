@@ -22,6 +22,14 @@ services:
       retries: 5
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: rhino-redis
+    # Disposable cache, not a durable store: no volume, RDB snapshotting off
+    # (--save ""), evicts oldest keys under memory pressure rather than OOMing.
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru", "--save", ""]
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -31,6 +39,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"  # reach the EMQX broker running directly on the host
     environment:
@@ -40,6 +50,7 @@ services:
       DB_NAME: rhino
       DB_USER: rhinoadminuser
       DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: 7d
       FRONTEND_URL: ${FRONTEND_URL}

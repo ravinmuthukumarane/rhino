@@ -201,60 +201,100 @@ function SectionColumn({ meterReadings }: { meterReadings: LiveReadingPayload[] 
   );
 }
 
-// The Energy/Diesel consumption chart pair, reused for both the plant-wide
-// fallback (no sections registered) and each per-section column - keeps the
-// period toggle, chart config, and styling identical in both places.
-function ConsumptionCharts({ consumChartData, dieselChartData, consumPeriod, setConsumPeriod }: {
-  consumChartData: any[]; dieselChartData: any[]; consumPeriod: ConsumPeriod; setConsumPeriod: (p: ConsumPeriod) => void;
-}) {
-  return (
-    <>
-      {/* Energy consumption */}
-      <div className="card">
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Zap className="w-4 h-4 text-primary-600 dark:text-primary-400" />Energy Consumption (kWh)</p>
-          <div className="flex gap-1 ml-auto">
-            {(['daily','monthly','yearly'] as const).map((p) => (
-              <button key={p} onClick={() => setConsumPeriod(p)}
-                className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${consumPeriod === p ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-                {p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-        <ResponsiveContainer width="100%" height={220}>
-          <BarChart data={consumChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-            <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-            <Tooltip content={<TT />} />
-            <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
-            <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
-            <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
-            {consumPeriod !== 'yearly' && <>
-              <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
-              <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
-              <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
-            </>}
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+// Shared by EnergyConsumptionCard/DieselConsumptionCard - the daily/monthly/
+// yearly summary endpoints return both energy and diesel together, and both
+// cards request off the same queryKey shape, so when their periods happen to
+// match react-query dedupes it into a single request; when they differ each
+// card gets its own independent fetch.
+function useConsumptionSummary(period: ConsumPeriod, selectedPlantId: string | null, section?: string) {
+  const params = { plant_id: selectedPlantId ?? undefined, ...(section ? { plant_section: section } : {}) };
+  const { data: dailyData } = useQuery({
+    queryKey: ['daily-summary', selectedPlantId, section],
+    queryFn: () => readingsApi.getDailySummary(params).then((r) => r.data),
+    enabled: period === 'daily',
+    refetchInterval: 60000,
+  });
+  const { data: monthlyData } = useQuery({
+    queryKey: ['monthly-summary', selectedPlantId, section, new Date().getFullYear()],
+    queryFn: () => readingsApi.getMonthlySummary({ ...params, year: new Date().getFullYear() }).then((r) => r.data),
+    enabled: period === 'monthly',
+  });
+  const { data: yearlyData } = useQuery({
+    queryKey: ['yearly-summary', selectedPlantId, section],
+    queryFn: () => readingsApi.getYearlySummary(params).then((r) => r.data),
+    enabled: period === 'yearly',
+  });
+  return { dailyData, monthlyData, yearlyData };
+}
 
-      {/* Diesel consumption */}
-      <div className="card">
-        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2"><Droplets className="w-4 h-4 text-orange-600 dark:text-orange-400" />Diesel Consumption (Litres)</p>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={dieselChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
-            <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-            <Tooltip content={<TT />} />
-            <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
-            <Area type="monotone" dataKey="Liters" stroke="#f97316" fill="#f9731620" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+function PeriodToggle({ period, setPeriod }: { period: ConsumPeriod; setPeriod: (p: ConsumPeriod) => void }) {
+  return (
+    <div className="flex gap-1 ml-auto">
+      {(['daily','monthly','yearly'] as const).map((p) => (
+        <button key={p} onClick={() => setPeriod(p)}
+          className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${period === p ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
+          {p.charAt(0).toUpperCase() + p.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Owns its own Daily/Monthly/Yearly toggle, independent of DieselConsumptionCard.
+function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: string | null; section?: string }) {
+  const [period, setPeriod] = useState<ConsumPeriod>('monthly');
+  const { dailyData, monthlyData, yearlyData } = useConsumptionSummary(period, selectedPlantId, section);
+  const consumChartData = buildConsumChartData(period, dailyData, monthlyData, yearlyData);
+
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Zap className="w-4 h-4 text-primary-600 dark:text-primary-400" />Energy Consumption (kWh)</p>
+        <PeriodToggle period={period} setPeriod={setPeriod} />
       </div>
-    </>
+      <ResponsiveContainer width="100%" height={220}>
+        <BarChart data={consumChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+          <Tooltip content={<TT />} />
+          <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
+          <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
+          <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
+          {period !== 'yearly' && <>
+            <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
+            <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
+            <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
+          </>}
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// Owns its own Daily/Monthly/Yearly toggle, independent of EnergyConsumptionCard.
+function DieselConsumptionCard({ selectedPlantId, section }: { selectedPlantId: string | null; section?: string }) {
+  const [period, setPeriod] = useState<ConsumPeriod>('monthly');
+  const { dailyData, monthlyData, yearlyData } = useConsumptionSummary(period, selectedPlantId, section);
+  const dieselChartData = buildDieselChartData(period, dailyData, monthlyData, yearlyData);
+
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Droplets className="w-4 h-4 text-orange-600 dark:text-orange-400" />Diesel Consumption (Litres)</p>
+        <PeriodToggle period={period} setPeriod={setPeriod} />
+      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        <AreaChart data={dieselChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
+          <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+          <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+          <Tooltip content={<TT />} />
+          <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
+          <Area type="monotone" dataKey="Liters" stroke="#f97316" fill="#f9731620" strokeWidth={2} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -274,36 +314,13 @@ const SECTION_THEMES = [
 function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, selectedPlantId, theme }: {
   section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
 }) {
-  const [consumPeriod, setConsumPeriod] = useState<ConsumPeriod>('monthly');
-
   const { data: statsData } = useQuery({
     queryKey: ['dashboard-stats', selectedPlantId, section],
     queryFn: () => readingsApi.getDashboardStats({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
     refetchInterval: 60000,
   });
 
-  const { data: dailyData } = useQuery({
-    queryKey: ['daily-summary', selectedPlantId, section],
-    queryFn: () => readingsApi.getDailySummary({ plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
-    enabled: consumPeriod === 'daily',
-    refetchInterval: 60000,
-  });
-
-  const { data: monthlyData } = useQuery({
-    queryKey: ['monthly-summary', selectedPlantId, section, new Date().getFullYear()],
-    queryFn: () => readingsApi.getMonthlySummary({ year: new Date().getFullYear(), plant_id: selectedPlantId ?? undefined, plant_section: section }).then((r) => r.data),
-    enabled: consumPeriod === 'monthly',
-  });
-
-  const { data: yearlyData } = useQuery({
-    queryKey: ['yearly-summary', selectedPlantId, section],
-    queryFn: () => readingsApi.getYearlySummary({ ...(selectedPlantId ? { plant_id: selectedPlantId } : {}), plant_section: section }).then((r) => r.data),
-    enabled: consumPeriod === 'yearly',
-  });
-
   const today = statsData?.today ?? {};
-  const consumChartData = buildConsumChartData(consumPeriod, dailyData, monthlyData, yearlyData);
-  const dieselChartData = buildDieselChartData(consumPeriod, dailyData, monthlyData, yearlyData);
 
   return (
     <div className={`rounded-2xl border ${theme.border} ${theme.bg} ${theme.ring} p-4 sm:p-5 space-y-5`}>
@@ -348,14 +365,10 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
       {/* Live trend / real-time / phase-level detail */}
       <SectionColumn meterReadings={readings} />
 
-      {/* Consumption charts - this section's own Daily/Monthly/Yearly toggle */}
+      {/* Consumption charts - each card owns its own Daily/Monthly/Yearly toggle */}
       <div className="space-y-5">
-        <ConsumptionCharts
-          consumChartData={consumChartData}
-          dieselChartData={dieselChartData}
-          consumPeriod={consumPeriod}
-          setConsumPeriod={setConsumPeriod}
-        />
+        <EnergyConsumptionCard selectedPlantId={selectedPlantId} section={section} />
+        <DieselConsumptionCard selectedPlantId={selectedPlantId} section={section} />
       </div>
     </div>
   );
@@ -364,7 +377,6 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
 export default function DashboardPage() {
   const { liveReadings, activeAlerts } = useSocket();
   const { selectedPlantId } = usePlant();
-  const [consumPeriod, setConsumPeriod] = useState<ConsumPeriod>('monthly');
 
   // All meters currently reporting for the selected plant (or the first
   // plant with any data, if none selected) - one entry per meter_id.
@@ -409,28 +421,6 @@ export default function DashboardPage() {
     refetchInterval: 60000,
   });
 
-  const { data: dailyData } = useQuery({
-    queryKey: ['daily-summary', selectedPlantId],
-    queryFn: () => readingsApi.getDailySummary({ plant_id: selectedPlantId ?? undefined }).then((r) => r.data),
-    enabled: sections.length === 0 && consumPeriod === 'daily',
-    refetchInterval: 60000,
-  });
-
-  const { data: monthlyData } = useQuery({
-    queryKey: ['monthly-summary', selectedPlantId, new Date().getFullYear()],
-    queryFn: () => readingsApi.getMonthlySummary({ year: new Date().getFullYear(), plant_id: selectedPlantId ?? undefined }).then((r) => r.data),
-    enabled: sections.length === 0 && consumPeriod === 'monthly',
-  });
-
-  const { data: yearlyData } = useQuery({
-    queryKey: ['yearly-summary', selectedPlantId],
-    queryFn: () => readingsApi.getYearlySummary(selectedPlantId ? { plant_id: selectedPlantId } : {}).then((r) => r.data),
-    enabled: sections.length === 0 && consumPeriod === 'yearly',
-  });
-
-  const consumChartData = buildConsumChartData(consumPeriod, dailyData, monthlyData, yearlyData);
-  const dieselChartData = buildDieselChartData(consumPeriod, dailyData, monthlyData, yearlyData);
-
   const today = statsData?.today ?? {};
   const unack = activeAlerts.filter((a) => !a.acknowledged).length;
 
@@ -464,14 +454,10 @@ export default function DashboardPage() {
             <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(today?.energy?.avg_power_factor)}`} />
           </div>
 
-          {/* Consumption charts */}
+          {/* Consumption charts - each card owns its own Daily/Monthly/Yearly toggle */}
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-            <ConsumptionCharts
-              consumChartData={consumChartData}
-              dieselChartData={dieselChartData}
-              consumPeriod={consumPeriod}
-              setConsumPeriod={setConsumPeriod}
-            />
+            <EnergyConsumptionCard selectedPlantId={selectedPlantId} />
+            <DieselConsumptionCard selectedPlantId={selectedPlantId} />
           </div>
         </>
       )}

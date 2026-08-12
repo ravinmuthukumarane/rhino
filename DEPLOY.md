@@ -157,6 +157,13 @@ Renewal is a systemd timer on the server (no cron available on this box):
 
 - **Postgres**: TimescaleDB (`timescale/timescaledb:latest-pg16` base),
   bound to `127.0.0.1:5432` only (not internet-reachable).
+- **Redis**: `redis:7-alpine`, no port published to the host — only reachable
+  from `backend` via the service name `redis` on the compose network.
+  Disposable cache (`--save ""`, no volume, `allkeys-lru` at 128mb) for the
+  dashboard-stats/daily/monthly/yearly summary endpoints; if the container is
+  gone or flushed, the backend just falls back to querying Postgres directly
+  on every request instead of failing. Restarting it needs no special
+  handling: `docker compose restart redis`.
 - **Backend**: Node/Express, bound to `127.0.0.1:5000` only — all real
   traffic goes through nginx. Consumes MQTT from EMQX (`ENABLE_MQTT=true`,
   `MQTT_BROKER_URL=mqtt://host.docker.internal:1883`, reaching the EMQX
