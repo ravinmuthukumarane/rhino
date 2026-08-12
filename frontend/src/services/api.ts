@@ -33,6 +33,7 @@ export const authApi = {
 
 export const readingsApi = {
   getLatest: (params?: object) => api.get('/readings/latest', { params }),
+  getLatestByMeter: (params?: object) => api.get('/readings/latest-by-meter', { params }),
   getEnergyHistory: (params?: object) => api.get('/readings/energy/history', { params }),
   getDieselHistory: (params?: object) => api.get('/readings/diesel/history', { params }),
   getGeneratorEvents: (params?: object) => api.get('/readings/generator/events', { params }),

@@ -6,6 +6,7 @@ const router = Router();
 router.use(authenticate);
 
 router.get('/latest', rc.getLatestReading);
+router.get('/latest-by-meter', rc.getLatestReadingsByMeter);
 router.get('/energy/history', rc.getEnergyHistory);
 router.get('/diesel/history', rc.getDieselHistory);
 router.get('/generator/events', rc.getGeneratorEvents);

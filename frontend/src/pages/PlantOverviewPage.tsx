@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { settingsApi } from '../services/api';
+import { settingsApi, readingsApi } from '../services/api';
 import { usePlant } from '../context/PlantContext';
 import { useSocket } from '../context/SocketContext';
 import { TrendingUp, AlertCircle, Zap, Droplets, Gauge } from 'lucide-react';
@@ -22,6 +22,17 @@ export default function PlantOverviewPage() {
       settingsApi.getFlowMeters().then((r) =>
         r.data.meters?.filter((m: any) => !selectedPlantId || m.plant_id === selectedPlantId)
       ),
+  });
+
+  // Seeds every meter card with its last-known DB reading on mount, so cards
+  // don't sit on "No readings yet" until each meter's next MQTT push lands
+  // (up to ~10s per meter). Live socket data below still takes priority once
+  // it arrives - this is just the gap-filler for the first few seconds.
+  const { data: snapshot } = useQuery({
+    queryKey: ['readings-latest-by-meter', selectedPlantId],
+    queryFn: () =>
+      readingsApi.getLatestByMeter(selectedPlantId ? { plant_id: selectedPlantId } : {}).then((r) => r.data),
+    staleTime: 15000,
   });
 
   // No per-reading severity field on EnergyReading - derive from power
@@ -61,8 +72,12 @@ export default function PlantOverviewPage() {
   const plantMeterReadings = selectedPlantId
     ? liveReadings.get(selectedPlantId) ?? new Map()
     : Array.from(liveReadings.values())[0] ?? new Map();
-  const latestByMeter: Record<string, any> = {};
-  const latestFlowByMeter: Record<string, any> = {};
+
+  // Start from the DB snapshot (last-known reading per meter), then let live
+  // socket pushes override it - live data is always more current once it
+  // arrives, but the snapshot avoids a blank/loading card in the meantime.
+  const latestByMeter: Record<string, any> = { ...(snapshot?.energy ?? {}) };
+  const latestFlowByMeter: Record<string, any> = { ...(snapshot?.diesel ?? {}) };
   for (const [meterId, payload] of plantMeterReadings) {
     if (payload.energy) latestByMeter[meterId] = payload.energy;
     if (payload.diesel) latestFlowByMeter[meterId] = payload.diesel;
