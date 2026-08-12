@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { usePlant } from '../context/PlantContext';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
-import axios from 'axios';
+import { reportsApi } from '../services/api';
 
 export default function TariffReportPage() {
   const { plants } = usePlant();
@@ -12,9 +12,7 @@ export default function TariffReportPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['tariff-report', plant, from, to],
-    queryFn: () =>
-      axios.get('/api/reports/tariff', { params: { plant_id: plant, from, to } })
-        .then(r => r.data),
+    queryFn: () => reportsApi.getTariffReport({ plant_id: plant, from, to }).then(r => r.data),
     enabled: !!plant,
   });
 

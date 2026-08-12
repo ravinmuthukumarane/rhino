@@ -67,12 +67,21 @@ const TT = ({ active, payload, label }: any) => active && payload?.length
   : null;
 
 type ConsumPeriod = 'daily' | 'monthly' | 'yearly';
+// 'source' = CEB vs Generator, 'tariff' = Day/Peak/Off-Peak. Kept as separate
+// views rather than 5 simultaneous bars - the two breakdowns answer different
+// questions (grid dependency vs tariff exposure) and rarely need comparing at once.
+// Yearly summaries don't carry the tariff breakdown, so 'tariff' only applies
+// to daily/monthly.
+type ConsumView = 'source' | 'tariff';
 
 // Shared by the plant-wide fallback and each per-section column - turns the
 // daily/monthly/yearly summary responses into the shape recharts expects.
-function buildConsumChartData(period: ConsumPeriod, dailyData: any, monthlyData: any, yearlyData: any) {
-  if (period === 'daily') return (dailyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: format(new Date(r.summary_date), 'dd MMM'), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
-  if (period === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
+function buildConsumChartData(period: ConsumPeriod, view: ConsumView, dailyData: any, monthlyData: any, yearlyData: any) {
+  const row = (label: string, r: any) => view === 'tariff'
+    ? { label, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }
+    : { label, CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 };
+  if (period === 'daily') return (dailyData?.energy ?? []).slice().reverse().map((r: any) => row(format(new Date(r.summary_date), 'dd MMM'), r));
+  if (period === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => row(format(new Date(r.month), "MMM ''yy"), r));
   return (yearlyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: String(r.year), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
 }
 
@@ -243,13 +252,20 @@ function PeriodToggle({ period, setPeriod }: { period: ConsumPeriod; setPeriod: 
 // Owns its own Daily/Monthly/Yearly toggle, independent of DieselConsumptionCard.
 function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: string | null; section?: string }) {
   const [period, setPeriod] = useState<ConsumPeriod>('monthly');
+  const [view, setView] = useState<ConsumView>('source');
   const { dailyData, monthlyData, yearlyData } = useConsumptionSummary(period, selectedPlantId, section);
-  const consumChartData = buildConsumChartData(period, dailyData, monthlyData, yearlyData);
+  const effectiveView: ConsumView = period === 'yearly' ? 'source' : view;
+  const consumChartData = buildConsumChartData(period, effectiveView, dailyData, monthlyData, yearlyData);
 
   return (
     <div className="card">
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Zap className="w-4 h-4 text-primary-600 dark:text-primary-400" />Energy Consumption (kWh)</p>
+        <select value={view} onChange={(e) => setView(e.target.value as ConsumView)} disabled={period === 'yearly'}
+          className="input py-1 text-xs w-auto ml-2 disabled:opacity-50" title={period === 'yearly' ? 'Tariff breakdown not available for yearly' : undefined}>
+          <option value="source">Source (CEB/Generator)</option>
+          <option value="tariff">Tariff (Day/Peak/Off-Peak)</option>
+        </select>
         <PeriodToggle period={period} setPeriod={setPeriod} />
       </div>
       <ResponsiveContainer width="100%" height={220}>
@@ -259,8 +275,14 @@ function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: 
           <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
           <Tooltip content={<TT />} />
           <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
-          <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
-          <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
+          {effectiveView === 'source' ? <>
+            <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
+            <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
+          </> : <>
+            <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
+            <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
+            <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
+          </>}
         </BarChart>
       </ResponsiveContainer>
     </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { usePlant } from '../context/PlantContext';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import axios from 'axios';
+import { reportsApi } from '../services/api';
 
 export default function GeneratorAnalysisPage() {
   const { plants } = usePlant();
@@ -12,9 +12,7 @@ export default function GeneratorAnalysisPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ['generator-analysis', plant, from, to],
-    queryFn: () =>
-      axios.get('/api/reports/generator-analysis', { params: { plant_id: plant, from, to } })
-        .then(r => r.data),
+    queryFn: () => reportsApi.getGeneratorAnalysis({ plant_id: plant, from, to }).then(r => r.data),
     enabled: !!plant,
   });
 
