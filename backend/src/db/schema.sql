@@ -125,6 +125,10 @@ CREATE INDEX IF NOT EXISTS idx_er_meter_id       ON energy_readings (meter_id);
 CREATE INDEX IF NOT EXISTS idx_er_plant_id       ON energy_readings (plant_id);
 CREATE INDEX IF NOT EXISTS idx_er_source         ON energy_readings (source);
 CREATE INDEX IF NOT EXISTS idx_er_time_period    ON energy_readings (time_period);
+-- Composite, supports `DISTINCT ON (meter_id) ... ORDER BY meter_id, recorded_at DESC`
+-- (the latest-reading-per-meter query the dashboard/plant overview run on
+-- every load) as a single index scan instead of a per-meter sort.
+CREATE INDEX IF NOT EXISTS idx_er_meter_recorded ON energy_readings (meter_id, recorded_at DESC);
 
 -- ============================================================
 -- FLOW / DIESEL READINGS
@@ -141,6 +145,8 @@ CREATE TABLE IF NOT EXISTS diesel_readings (
 CREATE INDEX IF NOT EXISTS idx_dr_recorded_at ON diesel_readings (recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_dr_meter_id     ON diesel_readings (meter_id);
 CREATE INDEX IF NOT EXISTS idx_dr_plant_id     ON diesel_readings (plant_id);
+-- Same reasoning as idx_er_meter_recorded above, for diesel_readings.
+CREATE INDEX IF NOT EXISTS idx_dr_meter_recorded ON diesel_readings (meter_id, recorded_at DESC);
 
 -- ============================================================
 -- GENERATOR EVENTS

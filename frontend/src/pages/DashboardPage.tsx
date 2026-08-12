@@ -71,8 +71,8 @@ type ConsumPeriod = 'daily' | 'monthly' | 'yearly';
 // Shared by the plant-wide fallback and each per-section column - turns the
 // daily/monthly/yearly summary responses into the shape recharts expects.
 function buildConsumChartData(period: ConsumPeriod, dailyData: any, monthlyData: any, yearlyData: any) {
-  if (period === 'daily') return (dailyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: format(new Date(r.summary_date), 'dd MMM'), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }));
-  if (period === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0, Day: +r.day_kwh||0, Peak: +r.peak_kwh||0, OffPeak: +r.off_peak_kwh||0 }));
+  if (period === 'daily') return (dailyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: format(new Date(r.summary_date), 'dd MMM'), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
+  if (period === 'monthly') return (monthlyData?.energy ?? []).map((r: any) => ({ label: format(new Date(r.month), "MMM ''yy"), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
   return (yearlyData?.energy ?? []).slice().reverse().map((r: any) => ({ label: String(r.year), CEB: +r.ceb_kwh||0, Generator: +r.generator_kwh||0 }));
 }
 
@@ -261,11 +261,6 @@ function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: 
           <Legend wrapperStyle={{ fontSize: 10, color: '#9ca3af' }} />
           <Bar dataKey="CEB" fill="#22c55e" maxBarSize={30} radius={[2,2,0,0]} />
           <Bar dataKey="Generator" fill="#f97316" maxBarSize={30} radius={[2,2,0,0]} />
-          {period !== 'yearly' && <>
-            <Bar dataKey="Day" fill="#3b82f6" maxBarSize={30} radius={[2,2,0,0]} />
-            <Bar dataKey="Peak" fill="#f59e0b" maxBarSize={30} radius={[2,2,0,0]} />
-            <Bar dataKey="OffPeak" fill="#8b5cf6" maxBarSize={30} radius={[2,2,0,0]} />
-          </>}
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -274,7 +269,7 @@ function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: 
 
 // Owns its own Daily/Monthly/Yearly toggle, independent of EnergyConsumptionCard.
 function DieselConsumptionCard({ selectedPlantId, section }: { selectedPlantId: string | null; section?: string }) {
-  const [period, setPeriod] = useState<ConsumPeriod>('monthly');
+  const [period, setPeriod] = useState<ConsumPeriod>('daily');
   const { dailyData, monthlyData, yearlyData } = useConsumptionSummary(period, selectedPlantId, section);
   const dieselChartData = buildDieselChartData(period, dailyData, monthlyData, yearlyData);
 

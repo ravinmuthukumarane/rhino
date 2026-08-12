@@ -2,7 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { authApi } from '../services/api';
 import { fmt } from '../utils/formatters';
-import { Users, Shield, UserPlus } from 'lucide-react';
+import { Users, Shield, UserPlus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
@@ -25,6 +25,15 @@ export default function UsersPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('Role updated'); },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Update failed'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (userId: string) => authApi.deleteUser(userId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); toast.success('User deleted'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
+  });
+  const handleDelete = (u: User) => {
+    if (confirm(`Delete user "${u.name}" (${u.email})? This cannot be undone.`)) deleteMutation.mutate(u.id);
+  };
 
   const [form, setForm] = useState({ name: '', email: '', role: 'viewer' });
   const createMutation = useMutation({
@@ -86,9 +95,9 @@ export default function UsersPage() {
       <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="border-b border-gray-200 dark:border-gray-800">{['Name','Email','Role','Verified','Registered','Change Role'].map((h) => <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium">{h}</th>)}</tr></thead>
+            <thead><tr className="border-b border-gray-200 dark:border-gray-800">{['Name','Email','Role','Verified','Registered','Change Role',''].map((h) => <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium">{h}</th>)}</tr></thead>
             <tbody>
-              {isLoading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
+              {isLoading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">Loading…</td></tr>
                 : users.map((u) => (
                 <tr key={u.id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
                   <td className="px-4 py-3">
@@ -108,6 +117,15 @@ export default function UsersPage() {
                         <option value="viewer">Viewer</option>
                         <option value="admin">Admin</option>
                       </select>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {u.id !== me?.id && (
+                      <button onClick={() => handleDelete(u)} disabled={deleteMutation.isPending}
+                        className="p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                        title="Delete user">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </td>
                 </tr>

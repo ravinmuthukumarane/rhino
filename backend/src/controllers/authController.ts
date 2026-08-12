@@ -112,3 +112,28 @@ export async function updateUserRole(req: AuthRequest, res: Response, next: Next
     res.json({ message: 'Role updated' });
   } catch (err) { next(err); }
 }
+
+export async function deleteUser(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { userId } = req.params;
+  if (userId === req.user?.id) { res.status(400).json({ error: 'Cannot delete your own account' }); return; }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // These tables reference the user for attribution (who acknowledged an
+    // alert, generated a report, ...) but shouldn't block the delete or
+    // disappear with them - detach the reference instead of cascading.
+    await client.query('UPDATE alerts SET acknowledged_by = NULL WHERE acknowledged_by = $1', [userId]);
+    await client.query('UPDATE alert_setpoints SET updated_by = NULL WHERE updated_by = $1', [userId]);
+    await client.query('UPDATE reports SET generated_by = NULL WHERE generated_by = $1', [userId]);
+    await client.query('UPDATE report_schedules SET updated_by = NULL WHERE updated_by = $1', [userId]);
+    const { rowCount } = await client.query('DELETE FROM users WHERE id = $1', [userId]);
+    await client.query('COMMIT');
+    if (!rowCount) { res.status(404).json({ error: 'User not found' }); return; }
+    res.json({ message: 'User deleted' });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    next(err);
+  } finally {
+    client.release();
+  }
+}

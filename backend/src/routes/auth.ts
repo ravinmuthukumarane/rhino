@@ -31,5 +31,6 @@ router.post('/users',
   body('role').optional().isIn(['admin', 'viewer']),
   validate, auth.createUser);
 router.put('/users/:userId/role', authenticate, requireAdmin, auth.updateUserRole);
+router.delete('/users/:userId', authenticate, requireAdmin, auth.deleteUser);
 
 export default router;

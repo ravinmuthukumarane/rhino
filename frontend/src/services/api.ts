@@ -29,6 +29,7 @@ export const authApi = {
   listUsers: () => api.get('/auth/users'),
   createUser: (data: object) => api.post('/auth/users', data),
   updateUserRole: (userId: string, role: string) => api.put(`/auth/users/${userId}/role`, { role }),
+  deleteUser: (userId: string) => api.delete(`/auth/users/${userId}`),
 };
 
 export const readingsApi = {
