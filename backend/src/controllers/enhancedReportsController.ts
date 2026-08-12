@@ -2,6 +2,20 @@ import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
 
+// `to` arrives as a plain date (e.g. "2026-08-12") and every query here uses
+// an exclusive upper bound (`recorded_at < to`) - without this, that
+// compares against midnight at the *start* of the selected day and silently
+// drops the entire "to" day from the report. Pure UTC arithmetic (the input
+// date-only string already parses as UTC midnight) avoids local-timezone
+// rollover surprises.
+const endOfDayExclusive = (dateStr: string): string => new Date(new Date(dateStr).getTime() + 86400000).toISOString();
+
+// Reading -> kWh: power_kw * (reading interval in hours). Readings land every
+// 5 seconds, so the interval is 5/3600 hours - written as 5.0/3600 because
+// Postgres does integer division on two integer literals (5/3600 truncates
+// to 0), which would silently zero out every kWh total below.
+const KWH_FACTOR_SQL = '(5.0/3600)';
+
 // Tariff Report: Day/Peak/Off-Peak breakdown
 export async function getTariffReport(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { plant_id, from, to } = req.query;
@@ -21,7 +35,7 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          em.meter_id,
          em.name as meter_name,
          er.time_period,
-         SUM(er.power_kw * (5/3600)) as period_kwh,
+         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh,
          MAX(er.power_kva) as max_kva,
          AVG(er.power_factor) as avg_pf,
          AVG((er.voltage_r + er.voltage_y + er.voltage_b) / 3) as avg_voltage,
@@ -33,12 +47,20 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          AND er.recorded_at < $3::timestamptz
        GROUP BY em.meter_id, em.name, er.time_period
        ORDER BY em.meter_id, er.time_period`,
-      [plant_id, from, to]
+      [plant_id, from, endOfDayExclusive(String(to))]
     );
+
+    // time_period in the DB is 'day'/'peak'/'off_peak' - the API/frontend
+    // field naming drops the underscore ('offpeak_kwh'), so this maps
+    // between the two instead of assuming they match.
+    const periodField = (tp: string) => (tp === 'off_peak' ? 'offpeak' : tp);
 
     // Aggregate by meter
     const meterMetrics: Record<string, any> = {};
-    let plantTotal = { day_kwh: 0, peak_kwh: 0, offpeak_kwh: 0, total_kwh: 0, max_kva: 0, avg_pf: 0 };
+    const plantTotal = { day_kwh: 0, peak_kwh: 0, offpeak_kwh: 0, total_kwh: 0, max_kva: 0, avg_pf: 0 };
+    const pfSum: Record<string, number> = {};
+    const pfCount: Record<string, number> = {};
+    let plantPfSum = 0, plantPfCount = 0;
 
     readings.forEach((row: any) => {
       if (!meterMetrics[row.meter_id]) {
@@ -54,21 +76,31 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
           max_kva_offpeak: 0,
           avg_pf: 0,
         };
+        pfSum[row.meter_id] = 0;
+        pfCount[row.meter_id] = 0;
       }
 
       const kwh = parseFloat(row.period_kwh || '0');
-      const key = `${row.time_period}_kwh`;
-      const kvaKey = `max_kva_${row.time_period}`;
+      const pf = parseFloat(row.avg_pf || '0');
+      const field = periodField(row.time_period);
 
-      meterMetrics[row.meter_id][key] = kwh;
-      meterMetrics[row.meter_id][kvaKey] = parseFloat(row.max_kva || '0');
+      meterMetrics[row.meter_id][`${field}_kwh`] = kwh;
+      meterMetrics[row.meter_id][`max_kva_${field}`] = parseFloat(row.max_kva || '0');
       meterMetrics[row.meter_id].total_kwh += kwh;
-      meterMetrics[row.meter_id].avg_pf = parseFloat(row.avg_pf || '0.9');
+      pfSum[row.meter_id] += pf;
+      pfCount[row.meter_id] += 1;
 
-      plantTotal[`${row.time_period}_kwh` as keyof typeof plantTotal] += kwh;
+      plantTotal[`${field}_kwh` as keyof typeof plantTotal] += kwh;
       plantTotal.total_kwh += kwh;
-      if (row.max_kva > plantTotal.max_kva) plantTotal.max_kva = parseFloat(row.max_kva || '0');
+      plantPfSum += pf;
+      plantPfCount += 1;
+      if (parseFloat(row.max_kva || '0') > plantTotal.max_kva) plantTotal.max_kva = parseFloat(row.max_kva || '0');
     });
+
+    Object.keys(meterMetrics).forEach((meterId) => {
+      meterMetrics[meterId].avg_pf = pfCount[meterId] ? pfSum[meterId] / pfCount[meterId] : 0;
+    });
+    plantTotal.avg_pf = plantPfCount ? plantPfSum / plantPfCount : 0;
 
     res.json({
       period: { from, to },
@@ -85,20 +117,22 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
   if (!from || !to) { res.status(400).json({ error: 'from and to dates required' }); return; }
 
   try {
+    const toExclusive = endOfDayExclusive(String(to));
+
     // Daily breakdown
     const { rows: dailyData } = await pool.query(
       `SELECT
          DATE(er.recorded_at) as record_date,
          er.meter_id,
          er.source,
-         SUM(er.power_kw * (5/3600)) as period_kwh
+         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh
        FROM energy_readings er
        WHERE er.plant_id = $1
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
        GROUP BY DATE(er.recorded_at), er.meter_id, er.source
        ORDER BY record_date DESC, er.meter_id`,
-      [plant_id, from, to]
+      [plant_id, from, toExclusive]
     );
 
     // Power interruptions (switchovers)
@@ -111,7 +145,7 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
          AND started_at >= $2::timestamptz
          AND started_at < $3::timestamptz
        GROUP BY DATE(started_at)`,
-      [plant_id, from, to]
+      [plant_id, from, toExclusive]
     );
 
     // Aggregate daily
@@ -179,7 +213,7 @@ export async function getDeviceComparison(req: AuthRequest, res: Response, next:
          em.meter_id,
          em.name,
          DATE(er.recorded_at) as record_date,
-         SUM(er.power_kw * (5/3600)) as total_kwh,
+         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as total_kwh,
          AVG(er.power_factor) as avg_pf,
          MAX(er.power_kva) as max_kva,
          AVG((er.voltage_r + er.voltage_y + er.voltage_b) / 3) as avg_voltage
@@ -190,7 +224,7 @@ export async function getDeviceComparison(req: AuthRequest, res: Response, next:
          AND er.recorded_at < $3::timestamptz
        GROUP BY em.meter_id, em.name, DATE(er.recorded_at)
        ORDER BY em.meter_id, record_date DESC`,
-      [meterArray, from, to]
+      [meterArray, from, endOfDayExclusive(String(to))]
     );
 
     res.json({
@@ -214,7 +248,7 @@ export async function getConsumptionTrend(req: AuthRequest, res: Response, next:
         DATE(er.recorded_at) as record_date,
         em.meter_id,
         em.name,
-        SUM(er.power_kw * (5/3600)) as daily_kwh,
+        SUM(er.power_kw * ${KWH_FACTOR_SQL}) as daily_kwh,
         AVG(er.power_factor) as avg_pf,
         MAX(er.power_kva) as max_kva
       FROM energy_readings er
