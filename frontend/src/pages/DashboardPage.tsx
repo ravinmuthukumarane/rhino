@@ -342,11 +342,7 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
   return (
     <div className={`rounded-2xl border ${theme.border} ${theme.bg} ${theme.ring} p-4 sm:p-5 space-y-5`}>
       <div className="flex items-center gap-2.5">
-        <span className={`inline-flex items-center justify-center w-7 h-7 rounded-lg text-white text-sm font-bold flex-shrink-0 ${theme.badge}`}>
-          {section.replace(/^P/i, '')}
-        </span>
         <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Plant {section.replace(/^P/i, '')}</p>
-        <span className="text-xs font-normal text-gray-500">({section})</span>
       </div>
 
       {/* Today stats row */}
