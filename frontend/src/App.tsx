@@ -13,6 +13,7 @@ import DashboardPage from './pages/DashboardPage';
 import AlertsPage from './pages/AlertsPage';
 import PlantOverviewPage from './pages/PlantOverviewPage';
 import ReportsPage from './pages/ReportsPage';
+import ReportSchedulesPage from './pages/ReportSchedulesPage';
 import TariffReportPage from './pages/TariffReportPage';
 import GeneratorAnalysisPage from './pages/GeneratorAnalysisPage';
 import SetpointsPage from './pages/SetpointsPage';
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="alerts" element={<AlertsPage />} />
         <Route path="overview" element={<PlantOverviewPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="report-schedules" element={<ReportSchedulesPage />} />
         <Route path="reports/tariff" element={<TariffReportPage />} />
         <Route path="reports/generator-analysis" element={<GeneratorAnalysisPage />} />
         <Route path="setpoints" element={<SetpointsPage />} />

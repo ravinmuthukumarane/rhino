@@ -60,6 +60,11 @@ export const reportsApi = {
   getHistory: () => api.get('/reports/history'),
   getSchedules: () => api.get('/reports/schedules'),
   updateSchedule: (frequency: string, data: object) => api.put(`/reports/schedules/${frequency}`, data),
+  getScheduleRecipients: (frequency: string) => api.get(`/reports/schedules/${frequency}/recipients`),
+  addScheduleRecipient: (frequency: string, data: { email: string; name?: string }) =>
+    api.post(`/reports/schedules/${frequency}/recipients`, data),
+  deleteScheduleRecipient: (frequency: string, id: string) =>
+    api.delete(`/reports/schedules/${frequency}/recipients/${id}`),
   getTariffReport: (params?: object) => api.get('/reports/tariff', { params }),
   getGeneratorAnalysis: (params?: object) => api.get('/reports/generator-analysis', { params }),
 };

@@ -68,3 +68,41 @@ export async function updateReportSchedule(req: AuthRequest, res: Response, next
     res.json({ schedule });
   } catch (err) { next(err); }
 }
+
+export async function getScheduleRecipients(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { frequency } = req.params;
+  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  try {
+    const { rows } = await pool.query(
+      'SELECT * FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email', [frequency]
+    );
+    res.json({ recipients: rows });
+  } catch (err) { next(err); }
+}
+
+export async function addScheduleRecipient(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { frequency } = req.params;
+  const { email, name } = req.body as { email?: string; name?: string };
+  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  if (!email || !/^\S+@\S+\.\S+$/.test(email)) { res.status(400).json({ error: 'Valid email required' }); return; }
+  try {
+    const { rows: [recipient] } = await pool.query(
+      `INSERT INTO report_schedule_recipients (frequency, email, name) VALUES ($1,$2,$3)
+       ON CONFLICT (frequency, email) DO UPDATE SET name=EXCLUDED.name RETURNING *`,
+      [frequency, email.trim().toLowerCase(), name || null]
+    );
+    res.status(201).json({ recipient });
+  } catch (err) { next(err); }
+}
+
+export async function deleteScheduleRecipient(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { frequency, id } = req.params;
+  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM report_schedule_recipients WHERE id=$1 AND frequency=$2', [id, frequency]
+    );
+    if (!rowCount) { res.status(404).json({ error: 'Recipient not found' }); return; }
+    res.status(204).send();
+  } catch (err) { next(err); }
+}

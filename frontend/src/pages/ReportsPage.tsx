@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { reportsApi, settingsApi, downloadBlob } from '../services/api';
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { reportsApi, downloadBlob } from '../services/api';
 import { usePlant } from '../context/PlantContext';
-import { useAuth } from '../context/AuthContext';
 import { fmt } from '../utils/formatters';
-import { FileDown, FileText, Clock } from 'lucide-react';
+import { FileDown, FileText } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { Plant } from '../types';
 
 const REPORTS = [
   { value: 'energy_daily',        label: 'Daily Energy Consumption' },
@@ -18,95 +16,18 @@ const REPORTS = [
   { value: 'consumption_summary', label: 'Full Consumption Summary' },
 ];
 
-function ScheduleCard({ schedule, plants, onSave, saving }: {
-  schedule: { frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string; plant_id: string | null };
-  plants: Plant[];
-  onSave: (data: object) => void;
-  saving: boolean;
-}) {
-  const [f, setF] = useState({
-    enabled: schedule.enabled, report_type: schedule.report_type,
-    format: schedule.format, plant_id: schedule.plant_id ?? '',
-  });
-  useEffect(() => {
-    setF({ enabled: schedule.enabled, report_type: schedule.report_type, format: schedule.format, plant_id: schedule.plant_id ?? '' });
-  }, [schedule]);
-
-  return (
-    <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="font-medium text-gray-800 dark:text-gray-200 capitalize">{schedule.frequency}</h4>
-        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-          <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
-          Enabled
-        </label>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="label">Report Type</label>
-          <select value={f.report_type} onChange={(e) => setF({ ...f, report_type: e.target.value })} className="input text-sm">
-            {REPORTS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label">Format</label>
-          <select value={f.format} onChange={(e) => setF({ ...f, format: e.target.value })} className="input text-sm">
-            <option value="excel">Excel</option>
-            <option value="pdf">PDF</option>
-          </select>
-        </div>
-        <div>
-          <label className="label">Plant</label>
-          <select value={f.plant_id} onChange={(e) => setF({ ...f, plant_id: e.target.value })} className="input text-sm">
-            <option value="">All Plants</option>
-            {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </div>
-      </div>
-      <p className="text-xs text-gray-500">
-        {schedule.frequency === 'daily' ? 'Runs at 00:10 for the previous day.' : 'Runs at 06:00 on the 1st for the previous month.'}
-        {' '}Emailed to all verified admins.
-      </p>
-      <button onClick={() => onSave(f)} disabled={saving} className="btn-primary text-sm py-1.5 px-4">
-        {saving ? 'Saving…' : 'Save'}
-      </button>
-    </div>
-  );
-}
-
 export default function ReportsPage() {
-  const { isAdmin } = useAuth();
   const { selectedPlantId } = usePlant();
   const [reportType, setReportType] = useState('energy_daily');
   const [dateFrom, setDateFrom] = useState(
     new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
   );
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
-  const qc = useQueryClient();
 
   const { data: histData } = useQuery({
     queryKey: ['report-history'],
     queryFn: () => reportsApi.getHistory().then((r) => r.data),
     refetchInterval: 30000,
-  });
-
-  const { data: schedulesData } = useQuery({
-    queryKey: ['report-schedules'],
-    queryFn: () => reportsApi.getSchedules().then((r) => r.data),
-    enabled: isAdmin,
-  });
-  const { data: plantsData } = useQuery({
-    queryKey: ['plants'],
-    queryFn: () => settingsApi.getPlants().then((r) => r.data),
-    enabled: isAdmin,
-  });
-  const plants: Plant[] = plantsData?.plants ?? [];
-  const schedules = schedulesData?.schedules ?? [];
-
-  const scheduleMutation = useMutation({
-    mutationFn: ({ frequency, data }: { frequency: string; data: object }) => reportsApi.updateSchedule(frequency, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['report-schedules'] }); toast.success('Schedule saved'); },
-    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Save failed'),
   });
 
   const genMutation = useMutation({
@@ -190,23 +111,6 @@ export default function ReportsPage() {
           </button>
         </div>
       </div>
-
-      {/* Scheduled Reports (admin only) */}
-      {isAdmin && (
-        <div className="card space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Clock className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Scheduled Reports</h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {schedules.map((s: any) => (
-              <ScheduleCard key={s.frequency} schedule={s} plants={plants}
-                onSave={(data) => scheduleMutation.mutate({ frequency: s.frequency, data })}
-                saving={scheduleMutation.isPending} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* History */}
       {histData?.reports && histData.reports.length > 0 && (

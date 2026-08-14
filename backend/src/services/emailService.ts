@@ -1,5 +1,6 @@
 import transporter from '../config/email';
 import { Alert } from '../types';
+import { SectionSummary } from './plantSectionSummaryService';
 
 const FROM = process.env.EMAIL_FROM ?? 'Energy Monitor <noreply@example.com>';
 const UI = process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -49,6 +50,14 @@ function layout(title: string, bodyHtml: string, accent = BRAND): string {
 const button = (label: string, href: string, color = BRAND) =>
   `<a href="${href}" style="display:inline-block;padding:12px 24px;background:${color};color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;margin:8px 0 4px;">${label}</a>`;
 
+const row = (label: string, value: string | number) =>
+  `<tr>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:13px;">${label}</td>
+     <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-size:13px;font-weight:bold;">${value}</td>
+   </tr>`;
+
+const n = (v: number | null, dp = 2) => v != null ? Number(v).toLocaleString(undefined, { minimumFractionDigits: dp, maximumFractionDigits: dp }) : '—';
+
 async function sendVerification(email: string, name: string, token: string): Promise<void> {
   await send(email, 'Verify Your Email – Energy Monitor', layout('Verify your email', `
     <p>Hello ${name}, please verify your email to activate your account.</p>
@@ -91,14 +100,32 @@ async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
 
 async function sendScheduledReport(
   emails: string[], frequency: 'daily' | 'monthly', reportLabel: string, periodLabel: string,
-  buffer: Buffer, filename: string, contentType: string
+  buffer: Buffer, filename: string, contentType: string,
+  sections: SectionSummary[] = []
 ): Promise<void> {
+  if (!emails.length) { console.log(`[EMAIL SKIPPED] ${frequency} report — no recipients`); return; }
   if (!process.env.SMTP_USER) { console.log(`[EMAIL SKIPPED] ${frequency} report — no SMTP`); return; }
+
+  const sectionBlock = (s: SectionSummary) => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:10px 0 18px;">
+      <tr><td colspan="2" style="padding:8px 12px;background:#eff6ff;font-weight:bold;color:${BRAND};font-size:13px;">${s.plant_section}</td></tr>
+      ${row('Total kWh', n(s.total_kwh))}
+      ${row('Max kVA', n(s.max_kva))}
+      ${row('Avg Power Factor', n(s.avg_power_factor, 3))}
+      ${row('Avg Voltage', n(s.avg_voltage, 1))}
+      ${row('CEB kWh', n(s.ceb_kwh))}
+      ${row('Generator kWh', n(s.generator_kwh))}
+      ${row('Diesel (L)', n(s.total_liters))}
+      ${row('Generator Run Hours', n(s.generator_run_hours))}
+    </table>`;
+
   await transporter.sendMail({
     from: FROM, to: emails.join(','),
     subject: `${frequency === 'daily' ? 'Daily' : 'Monthly'} Report – ${reportLabel} – Energy Monitor`,
-    html: layout(`${frequency === 'daily' ? 'Daily' : 'Monthly'} report ready`, `
-      <p>Please find attached the ${frequency} <b>${reportLabel}</b> report for <b>${periodLabel}</b>.</p>
+    html: layout(`${frequency === 'daily' ? 'Daily' : 'Monthly'} report – ${periodLabel}`, `
+      <p>Summary for <b>${periodLabel}</b>, by plant section:</p>
+      ${sections.length ? sections.map(sectionBlock).join('') : '<p style="color:#6b7280;">No section data available for this period.</p>'}
+      <p>Full detail attached as <b>${reportLabel}</b>.</p>
       <p style="color:#6b7280;font-size:13px;">Attached as <span style="font-family:monospace;">${filename}</span></p>`),
     attachments: [{ filename, content: buffer, contentType }],
   });

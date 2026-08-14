@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import pool from '../config/database';
 import { reportService } from './reportService';
 import { emailService } from './emailService';
+import { plantSectionSummaryService } from './plantSectionSummaryService';
 
 const REPORT_LABELS: Record<string, string> = {
   energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
@@ -39,13 +40,15 @@ async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void>
       [sched.report_type, start, end, sched.format, filename, sched.plant_id ?? null]
     );
 
-    const { rows } = await pool.query("SELECT email FROM users WHERE role='admin' AND is_verified=true");
+    const { rows } = await pool.query(
+      'SELECT email FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email',
+      [frequency]
+    );
     const emails = rows.map((r: { email: string }) => r.email);
-    if (emails.length) {
-      const label = REPORT_LABELS[sched.report_type] ?? sched.report_type;
-      await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType);
-      console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
-    }
+    const sections = await plantSectionSummaryService.getSectionSummaries(start, end);
+    const label = REPORT_LABELS[sched.report_type] ?? sched.report_type;
+    await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections);
+    if (emails.length) console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
   } catch (err) { console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message); }
 }
 

@@ -26,6 +26,14 @@ export interface Plant {
   created_at: string;
 }
 
+export interface ReportScheduleRecipient {
+  id: string;
+  frequency: 'daily' | 'monthly';
+  email: string;
+  name: string | null;
+  created_at: string;
+}
+
 export interface EnergyMeter {
   id: string;
   meter_id: string;

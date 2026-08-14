@@ -292,6 +292,19 @@ CREATE TABLE IF NOT EXISTS report_schedules (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Independent recipient list per frequency (daily/monthly) - not tied to
+-- login accounts, since report recipients don't necessarily need app access.
+CREATE TABLE IF NOT EXISTS report_schedule_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  frequency VARCHAR(20) NOT NULL CHECK (frequency IN ('daily', 'monthly')),
+  email VARCHAR(255) NOT NULL,
+  name VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (frequency, email)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rsr_frequency ON report_schedule_recipients (frequency);
+
 -- ============================================================
 -- TRIGGERS
 -- ============================================================
