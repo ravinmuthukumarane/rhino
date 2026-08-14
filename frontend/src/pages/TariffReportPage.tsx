@@ -93,7 +93,7 @@ export default function TariffReportPage() {
                 <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                  formatter={(value: number | string) => Number(value).toFixed(3)}
+                  formatter={(value: number | string) => Number(value).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                 />
                 <Legend />
                 <Bar dataKey="day_kwh" fill={colors[0]} name="Day" />
