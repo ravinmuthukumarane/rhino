@@ -91,7 +91,10 @@ export default function TariffReportPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="meter_name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
                 <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  formatter={(value: number | string) => Number(value).toFixed(3)}
+                />
                 <Legend />
                 <Bar dataKey="day_kwh" fill={colors[0]} name="Day" />
                 <Bar dataKey="peak_kwh" fill={colors[1]} name="Peak" />
