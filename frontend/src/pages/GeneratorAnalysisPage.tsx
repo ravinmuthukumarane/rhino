@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usePlant } from '../context/PlantContext';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { reportsApi } from '../services/api';
+import { numFmt } from '../utils/formatters';
 
 export default function GeneratorAnalysisPage() {
   const { plants } = usePlant();
@@ -55,12 +56,12 @@ export default function GeneratorAnalysisPage() {
             <div className="grid grid-cols-4 gap-3">
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">CEB kWh</p>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{parseFloat(data.monthly_summary.total_ceb_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{numFmt(data.monthly_summary.total_ceb_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">from grid</p>
               </div>
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Generator kWh</p>
-                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{parseFloat(data.monthly_summary.total_generator_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{numFmt(data.monthly_summary.total_generator_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">from backup</p>
               </div>
               <div className="card">
@@ -84,7 +85,10 @@ export default function GeneratorAnalysisPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="date" tick={{ fill: '#9ca3af', fontSize: 12 }} />
                 <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  formatter={(value: number | string) => numFmt(value, 1)}
+                />
                 <Legend />
                 <Area type="monotone" dataKey="ceb_kwh" stackId="1" fill="#3b82f6" name="CEB" />
                 <Area type="monotone" dataKey="generator_kwh" stackId="1" fill="#f59e0b" name="Generator" />
@@ -121,9 +125,9 @@ export default function GeneratorAnalysisPage() {
                   {data.daily_breakdown?.map((d: any) => (
                     <tr key={d.date} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
                       <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{d.date}</td>
-                      <td className="px-4 py-3">{parseFloat(d.ceb_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3">{parseFloat(d.generator_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{parseFloat(d.total_kwh).toFixed(1)}</td>
+                      <td className="px-4 py-3">{numFmt(d.ceb_kwh, 1)}</td>
+                      <td className="px-4 py-3">{numFmt(d.generator_kwh, 1)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{numFmt(d.total_kwh, 1)}</td>
                       <td className={`px-4 py-3 font-semibold ${parseFloat(d.generator_percentage) > 20 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                         {d.generator_percentage}%
                       </td>

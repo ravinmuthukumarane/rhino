@@ -3,6 +3,7 @@ import { settingsApi, readingsApi } from '../services/api';
 import { usePlant } from '../context/PlantContext';
 import { useSocket } from '../context/SocketContext';
 import { TrendingUp, AlertCircle, Zap, Droplets, Gauge } from 'lucide-react';
+import { numFmt } from '../utils/formatters';
 
 export default function PlantOverviewPage() {
   const { selectedPlantId } = usePlant();
@@ -123,11 +124,11 @@ export default function PlantOverviewPage() {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Power</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw != null ? parseFloat(String(reading.power_kw)).toFixed(2) : '—'} kW</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw != null ? numFmt(reading.power_kw, 2) : '—'} kW</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">KVA</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva != null ? parseFloat(String(reading.power_kva)).toFixed(2) : '—'}</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva != null ? numFmt(reading.power_kva, 2) : '—'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">PF</span>
@@ -178,11 +179,11 @@ export default function PlantOverviewPage() {
                     <div className="space-y-2 text-xs">
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Flow Rate</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? parseFloat(String(reading.flow_rate)).toFixed(2) : '—'} L/hr</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? numFmt(reading.flow_rate, 2) : '—'} L/hr</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Total Volume</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? parseFloat(String(reading.total_volume)).toFixed(2) : '—'} L</span>
+                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? numFmt(reading.total_volume, 2) : '—'} L</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-600 dark:text-gray-400">Last Reading</span>

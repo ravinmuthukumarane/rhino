@@ -5,7 +5,7 @@ import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Cartesia
 import { useSocket } from '../context/SocketContext';
 import { usePlant } from '../context/PlantContext';
 import { readingsApi, settingsApi } from '../services/api';
-import { fmt } from '../utils/formatters';
+import { fmt, numFmt } from '../utils/formatters';
 import { getTimePeriod, timePeriodLabels, timePeriodColors } from '../utils/timeUtils';
 import { format } from 'date-fns';
 import type { EnergyReading, LiveReadingPayload, TimePeriod } from '../types';
@@ -63,7 +63,7 @@ function MetricCard({ label, value, unit, color = 'primary', sub }: { label: str
 }
 
 const TT = ({ active, payload, label }: any) => active && payload?.length
-  ? <div className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-2 text-xs"><p className="text-gray-700 dark:text-gray-300 mb-1">{label}</p>{payload.map((p: any) => <div key={p.name} className="flex items-center gap-1.5 mb-0.5"><div className="w-2 h-2 rounded-full" style={{ background: p.color }} /><span className="text-gray-600 dark:text-gray-400">{p.name}:</span><span className="text-gray-900 dark:text-gray-100 font-medium">{p.value}</span></div>)}</div>
+  ? <div className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg p-2 text-xs"><p className="text-gray-700 dark:text-gray-300 mb-1">{label}</p>{payload.map((p: any) => <div key={p.name} className="flex items-center gap-1.5 mb-0.5"><div className="w-2 h-2 rounded-full" style={{ background: p.color }} /><span className="text-gray-600 dark:text-gray-400">{p.name}:</span><span className="text-gray-900 dark:text-gray-100 font-medium">{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}</span></div>)}</div>
   : null;
 
 type ConsumPeriod = 'daily' | 'monthly' | 'yearly';
@@ -181,8 +181,8 @@ function SectionColumn({ meterReadings }: { meterReadings: LiveReadingPayload[] 
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           <MetricCard label="Avg Voltage" value={avgV} unit="V" color={vColor} />
           <MetricCard label="Avg Current" value={avgI} unit="A" color="blue" />
-          <MetricCard label="Power (kW)" value={e ? parseFloat(String(e.power_kw)).toFixed(2) : null} color="green" />
-          <MetricCard label="KVA (Max Demand)" value={e ? parseFloat(String(e.power_kva)).toFixed(2) : null} color="purple" />
+          <MetricCard label="Power (kW)" value={e ? numFmt(e.power_kw, 2) : null} color="green" />
+          <MetricCard label="KVA (Max Demand)" value={e ? numFmt(e.power_kva, 2) : null} color="purple" />
           <MetricCard label="Power Factor" value={e ? parseFloat(String(e.power_factor)).toFixed(3) : null} color={pfColor} />
           <MetricCard label="3rd Harmonic" value={avgH3} unit="%" color={h3Color} sub="Avg R/Y/B" />
         </div>
@@ -203,7 +203,7 @@ function SectionColumn({ meterReadings }: { meterReadings: LiveReadingPayload[] 
           <MetricCard label="3H-B" value={e?.third_harmonic_b != null ? parseFloat(String(e.third_harmonic_b)).toFixed(2) : null} unit="%" color="blue" />
           <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
           <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
-          <MetricCard label="Flow Rate" value={d ? parseFloat(String(d.flow_rate)).toFixed(2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
+          <MetricCard label="Flow Rate" value={d ? numFmt(d.flow_rate, 2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
         </div>
       </div>
     </div>

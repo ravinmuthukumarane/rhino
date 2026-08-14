@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usePlant } from '../context/PlantContext';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { reportsApi } from '../services/api';
+import { numFmt } from '../utils/formatters';
 
 export default function TariffReportPage() {
   const { plants } = usePlant();
@@ -57,27 +58,27 @@ export default function TariffReportPage() {
             <div className="grid grid-cols-5 gap-3">
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Day</p>
-                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{parseFloat(data.plant_total.day_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">{numFmt(data.plant_total.day_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Peak</p>
-                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{parseFloat(data.plant_total.peak_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-red-600 dark:text-red-400">{numFmt(data.plant_total.peak_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Off-Peak</p>
-                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{parseFloat(data.plant_total.offpeak_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-green-600 dark:text-green-400">{numFmt(data.plant_total.offpeak_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Total</p>
-                <p className="text-2xl font-bold text-gray-800 dark:text-gray-200">{parseFloat(data.plant_total.total_kwh).toFixed(0)}</p>
+                <p className="text-2xl font-bold text-gray-800 dark:text-gray-200">{numFmt(data.plant_total.total_kwh, 0)}</p>
                 <p className="text-xs text-gray-500">kWh</p>
               </div>
               <div className="card">
                 <p className="text-xs text-gray-600 dark:text-gray-400">Max KVA</p>
-                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{parseFloat(data.plant_total.max_kva).toFixed(1)}</p>
+                <p className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{numFmt(data.plant_total.max_kva, 1)}</p>
                 <p className="text-xs text-gray-500">kVA</p>
               </div>
             </div>
@@ -93,7 +94,7 @@ export default function TariffReportPage() {
                 <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
-                  formatter={(value: number | string) => Number(value).toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                  formatter={(value: number | string) => numFmt(value, 3)}
                 />
                 <Legend />
                 <Bar dataKey="day_kwh" fill={colors[0]} name="Day" />
@@ -111,7 +112,10 @@ export default function TariffReportPage() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="meter_name" tick={{ fill: '#9ca3af', fontSize: 12 }} />
                 <YAxis tick={{ fill: '#9ca3af', fontSize: 12 }} />
-                <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px' }}
+                  formatter={(value: number | string) => numFmt(value, 1)}
+                />
                 <Bar dataKey="max_kva_day" fill="#f59e0b" name="Max KVA" />
               </BarChart>
             </ResponsiveContainer>
@@ -132,12 +136,12 @@ export default function TariffReportPage() {
                   {data.metrics?.map((m: any) => (
                     <tr key={m.meter_id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
                       <td className="px-4 py-3 text-gray-800 dark:text-gray-200">{m.meter_name}</td>
-                      <td className="px-4 py-3">{parseFloat(m.day_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3">{parseFloat(m.peak_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3">{parseFloat(m.offpeak_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{parseFloat(m.total_kwh).toFixed(1)}</td>
-                      <td className="px-4 py-3">{parseFloat(m.max_kva_day).toFixed(1)}</td>
-                      <td className="px-4 py-3">{parseFloat(m.avg_pf).toFixed(3)}</td>
+                      <td className="px-4 py-3">{numFmt(m.day_kwh, 1)}</td>
+                      <td className="px-4 py-3">{numFmt(m.peak_kwh, 1)}</td>
+                      <td className="px-4 py-3">{numFmt(m.offpeak_kwh, 1)}</td>
+                      <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{numFmt(m.total_kwh, 1)}</td>
+                      <td className="px-4 py-3">{numFmt(m.max_kva_day, 1)}</td>
+                      <td className="px-4 py-3">{numFmt(m.avg_pf, 3)}</td>
                     </tr>
                   ))}
                 </tbody>
