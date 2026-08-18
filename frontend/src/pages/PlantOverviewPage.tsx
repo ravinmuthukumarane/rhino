@@ -2,8 +2,64 @@ import { useQuery } from '@tanstack/react-query';
 import { settingsApi, readingsApi } from '../services/api';
 import { usePlant } from '../context/PlantContext';
 import { useSocket } from '../context/SocketContext';
-import { TrendingUp, AlertCircle, Zap, Droplets, Gauge } from 'lucide-react';
+import { AlertCircle, Zap, Droplets, Boxes } from 'lucide-react';
 import { numFmt } from '../utils/formatters';
+
+// Fixed display grouping for this page, in this fixed order, replacing the
+// previous plain alphabetical listing. Matched by device name (falling back
+// to meter_id) rather than plant_id, since these three groups don't always
+// line up cleanly with how meters happen to be assigned to a plant record in
+// Device Settings. Energy meters and the plant's diesel flow meter are
+// interleaved in one list per category to match how they read on-site.
+const CATEGORIES: { label: string; names: string[] }[] = [
+  {
+    label: 'Plant 1',
+    names: [
+      'P1 PR',
+      'P1 BM Section 1 -ST/TH/MD/TR',
+      'P1 BM Section 2 -Vacuum/VAT/CON',
+      'P1 STR/COMPRE',
+      'P1 GENERATOR',
+      'P1 -Main Incoming Energy',
+      'P1 Diesel Flow Meter',
+      'P1 Compressor 1',
+      'P1 Compressor 2',
+      'P1 Compressor 3',
+      'P1 Compressor 4',
+      'P1 Air Dryer',
+      'P1 STR',
+    ],
+  },
+  {
+    label: 'Plant 4',
+    names: [
+      'P2-PR',
+      'P4-CELLULOSE',
+      'OFFICE/WSHOP/CWA',
+      'P4- BM',
+      'P4- PR',
+      'P4- STR/TR',
+      'P4-SUB SECTION',
+      'P4- BAG OPENER',
+      'STRIP CEILLING PLANT',
+      'P4- ST/TR',
+      'GENERATOR',
+      'P4 -Main Incoming Energy',
+      'P4 Diesel Flow Meter',
+      'P4 Compressor 1',
+      'P4 Compressor 2',
+      'P4 Air Dryer',
+    ],
+  },
+  {
+    label: 'Other',
+    names: ['WORKSHOP', 'CANTEEN', 'MAIN OFFICE'],
+  },
+];
+
+const norm = (s?: string) => (s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+type Device = { key: string; kind: 'energy' | 'flow'; meter: any };
 
 export default function PlantOverviewPage() {
   const { selectedPlantId } = usePlant();
@@ -84,118 +140,133 @@ export default function PlantOverviewPage() {
     if (payload.diesel) latestFlowByMeter[meterId] = payload.diesel;
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Energy Meters */}
-      {meters && meters.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-4">
-            <Zap className="w-5 h-5 text-primary-600 dark:text-primary-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Energy Meters</h2>
-            <span className="ml-auto text-xs text-gray-500">({meters.length} meters)</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {meters.map((meter: any) => {
-              const reading = latestByMeter[meter.meter_id];
-              return (
-                <div
-                  key={meter.meter_id}
-                  className={`card border-2 p-4 ${getStatusColor(reading)} transition-all`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{meter.name}</p>
-                      <p className="text-xs text-gray-500">{meter.meter_id}</p>
-                    </div>
-                    <div className={`text-xs font-bold px-2 py-1 rounded ${getStatusTextColor(reading)}`}>
-                      {getStatusText(reading)}
-                    </div>
-                  </div>
+  const energyDevices: Device[] = (meters ?? []).map((m: any) => ({ key: `e-${m.meter_id}`, kind: 'energy', meter: m }));
+  const flowDevices: Device[] = (flowmeters ?? []).map((m: any) => ({ key: `f-${m.meter_id}`, kind: 'flow', meter: m }));
+  const allDevices: Device[] = [...energyDevices, ...flowDevices];
+  const findDevice = (name: string) =>
+    allDevices.find((d) => norm(d.meter.name) === norm(name) || norm(d.meter.meter_id) === norm(name));
 
-                  {reading ? (
-                    <div className="space-y-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Voltage</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.voltage_r != null ? parseFloat(String(reading.voltage_r)).toFixed(1) : '—'} V</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Current</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.current_r != null ? parseFloat(String(reading.current_r)).toFixed(2) : '—'} A</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Power</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw != null ? numFmt(reading.power_kw, 2) : '—'} kW</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">KVA</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva != null ? numFmt(reading.power_kva, 2) : '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">PF</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? parseFloat(String(reading.power_factor)).toFixed(3) : '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">3rd Harmonic</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.third_harmonic_r != null ? parseFloat(String(reading.third_harmonic_r)).toFixed(2) : '—'}%</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500">No readings yet</p>
-                  )}
-                </div>
-              );
-            })}
+  const categorized = CATEGORIES.map((cat) => ({
+    label: cat.label,
+    items: cat.names.map(findDevice).filter((d): d is Device => d != null),
+  }));
+  // Anything registered but not named in any category above still shows up
+  // here, rather than silently disappearing from the page.
+  const categorizedKeys = new Set(categorized.flatMap((c) => c.items.map((d) => d.key)));
+  const leftover = allDevices.filter((d) => !categorizedKeys.has(d.key));
+
+  const renderDevice = (d: Device) => {
+    if (d.kind === 'energy') {
+      const reading = latestByMeter[d.meter.meter_id];
+      return (
+        <div className={`card border-2 p-4 ${getStatusColor(reading)} transition-all`}>
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{d.meter.name}</p>
+              <p className="text-xs text-gray-500">{d.meter.meter_id}</p>
+            </div>
+            <div className={`text-xs font-bold px-2 py-1 rounded ${getStatusTextColor(reading)}`}>
+              {getStatusText(reading)}
+            </div>
+          </div>
+
+          {reading ? (
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Voltage</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.voltage_r != null ? parseFloat(String(reading.voltage_r)).toFixed(1) : '—'} V</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Current</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.current_r != null ? parseFloat(String(reading.current_r)).toFixed(2) : '—'} A</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Power</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kw != null ? numFmt(reading.power_kw, 2) : '—'} kW</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">KVA</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_kva != null ? numFmt(reading.power_kva, 2) : '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">PF</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? parseFloat(String(reading.power_factor)).toFixed(3) : '—'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">3rd Harmonic</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.third_harmonic_r != null ? parseFloat(String(reading.third_harmonic_r)).toFixed(2) : '—'}%</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">No readings yet</p>
+          )}
+        </div>
+      );
+    }
+
+    const reading = latestFlowByMeter[d.meter.meter_id];
+    return (
+      <div className={`card border-2 p-4 transition-all ${reading ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700/50' : 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-600'}`}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{d.meter.name}</p>
+            <p className="text-xs text-gray-500">{d.meter.meter_id}</p>
+          </div>
+          <div className={`text-xs font-bold px-2 py-1 rounded ${reading ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>
+            {reading ? 'LIVE' : 'NO DATA'}
           </div>
         </div>
-      )}
 
-      {/* Flow Meters */}
-      {flowmeters && flowmeters.length > 0 && (
-        <div>
+        {reading ? (
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Flow Rate</span>
+              <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? numFmt(reading.flow_rate, 2) : '—'} L/hr</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Total Volume</span>
+              <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? numFmt(reading.total_volume, 2) : '—'} L</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600 dark:text-gray-400">Last Reading</span>
+              <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.recorded_at ? new Date(reading.recorded_at).toLocaleTimeString() : '—'}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">No readings yet</p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-6">
+      {categorized.map((cat) => cat.items.length > 0 && (
+        <div key={cat.label}>
           <div className="flex items-center gap-2 mb-4">
-            <Droplets className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Flow Meters</h2>
-            <span className="ml-auto text-xs text-gray-500">({flowmeters.length} meters)</span>
+            {cat.label === 'Other' ? (
+              <Boxes className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+            ) : (
+              <Zap className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+            )}
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{cat.label}</h2>
+            <span className="ml-auto text-xs text-gray-500">({cat.items.length} devices)</span>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {flowmeters.map((meter: any) => {
-              const reading = latestFlowByMeter[meter.meter_id];
-              return (
-                <div
-                  key={meter.meter_id}
-                  className={`card border-2 p-4 transition-all ${reading ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700/50' : 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-600'}`}
-                >
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{meter.name}</p>
-                      <p className="text-xs text-gray-500">{meter.meter_id}</p>
-                    </div>
-                    <div className={`text-xs font-bold px-2 py-1 rounded ${reading ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                      {reading ? 'LIVE' : 'NO DATA'}
-                    </div>
-                  </div>
+            {cat.items.map((d) => <div key={d.key}>{renderDevice(d)}</div>)}
+          </div>
+        </div>
+      ))}
 
-                  {reading ? (
-                    <div className="space-y-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Flow Rate</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? numFmt(reading.flow_rate, 2) : '—'} L/hr</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Total Volume</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? numFmt(reading.total_volume, 2) : '—'} L</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600 dark:text-gray-400">Last Reading</span>
-                        <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.recorded_at ? new Date(reading.recorded_at).toLocaleTimeString() : '—'}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-gray-500">No readings yet</p>
-                  )}
-                </div>
-              );
-            })}
+      {leftover.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-4">
+            <Droplets className="w-5 h-5 text-gray-500" />
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Uncategorized</h2>
+            <span className="ml-auto text-xs text-gray-500">({leftover.length} devices)</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {leftover.map((d) => <div key={d.key}>{renderDevice(d)}</div>)}
           </div>
         </div>
       )}
