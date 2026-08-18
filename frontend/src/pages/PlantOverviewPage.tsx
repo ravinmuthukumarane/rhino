@@ -7,10 +7,9 @@ import { numFmt } from '../utils/formatters';
 
 // Fixed display grouping for this page, in this fixed order, replacing the
 // previous plain alphabetical listing. Matched by device name (falling back
-// to meter_id) rather than plant_id, since these three groups don't always
-// line up cleanly with how meters happen to be assigned to a plant record in
-// Device Settings. Energy meters and the plant's diesel flow meter are
-// interleaved in one list per category to match how they read on-site.
+// to meter_id) rather than plant_id, since these groups don't always line up
+// cleanly with how meters happen to be assigned to a plant record in Device
+// Settings - e.g. "P1-CELLULOSE" is a Plant 4 device despite its name.
 const CATEGORIES: { label: string; names: string[] }[] = [
   {
     label: 'Plant 1',
@@ -21,7 +20,6 @@ const CATEGORIES: { label: string; names: string[] }[] = [
       'P1 STR/COMPRE',
       'P1 GENERATOR',
       'P1 -Main Incoming Energy',
-      'P1 Diesel Flow Meter',
       'P1 Compressor 1',
       'P1 Compressor 2',
       'P1 Compressor 3',
@@ -34,22 +32,25 @@ const CATEGORIES: { label: string; names: string[] }[] = [
     label: 'Plant 4',
     names: [
       'P2-PR',
-      'P4-CELLULOSE',
+      'P1-CELLULOSE',
       'OFFICE/WSHOP/CWA',
       'P4- BM',
       'P4- PR',
       'P4- STR/TR',
       'P4-SUB SECTION',
       'P4- BAG OPENER',
-      'STRIP CEILLING PLANT',
+      'STRIP CEILING PLANT',
       'P4- ST/TR',
-      'GENERATOR',
+      'P4 GENERATOR',
       'P4 -Main Incoming Energy',
-      'P4 Diesel Flow Meter',
       'P4 Compressor 1',
       'P4 Compressor 2',
       'P4 Air Dryer',
     ],
+  },
+  {
+    label: 'Flow Meters',
+    names: ['P1 Diesel Flow Meter', 'P4 Diesel Flow Meter'],
   },
   {
     label: 'Other',
@@ -244,7 +245,9 @@ export default function PlantOverviewPage() {
       {categorized.map((cat) => cat.items.length > 0 && (
         <div key={cat.label}>
           <div className="flex items-center gap-2 mb-4">
-            {cat.label === 'Other' ? (
+            {cat.label === 'Flow Meters' ? (
+              <Droplets className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            ) : cat.label === 'Other' ? (
               <Boxes className="w-5 h-5 text-primary-600 dark:text-primary-400" />
             ) : (
               <Zap className="w-5 h-5 text-primary-600 dark:text-primary-400" />
@@ -261,7 +264,7 @@ export default function PlantOverviewPage() {
       {leftover.length > 0 && (
         <div>
           <div className="flex items-center gap-2 mb-4">
-            <Droplets className="w-5 h-5 text-gray-500" />
+            <Boxes className="w-5 h-5 text-gray-500" />
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Uncategorized</h2>
             <span className="ml-auto text-xs text-gray-500">({leftover.length} devices)</span>
           </div>
