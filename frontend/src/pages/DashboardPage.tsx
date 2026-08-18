@@ -96,12 +96,17 @@ function buildDieselChartData(period: ConsumPeriod, dailyData: any, monthlyData:
 // can be compared side by side instead of being merged into one plant-wide view.
 // The section heading itself is rendered by the caller, above the rest of
 // that section's block (stats row, source indicator, this, consumption charts).
-function SectionColumn({ meterReadings }: { meterReadings: LiveReadingPayload[] }) {
+function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section }: {
+  meterReadings: LiveReadingPayload[]; energyReadings?: LiveReadingPayload[]; selectedPlantId?: string | null; section?: string;
+}) {
   const [liveHistory, setLiveHistory] = useState<any[]>([]);
   const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
 
-  const energyReadings = meterReadings.map((r) => r.energy).filter((x): x is EnergyReading => x != null);
-  const e = aggregateEnergyReadings(energyReadings);
+  // Falls back to every meter in the section when no dedicated incomer
+  // reading is available yet (e.g. the plant-wide view, which passes none).
+  const energySource = energyReadings && energyReadings.length > 0 ? energyReadings : meterReadings;
+  const energyValues = energySource.map((r) => r.energy).filter((x): x is EnergyReading => x != null);
+  const e = aggregateEnergyReadings(energyValues);
   const d = meterReadings.filter((r) => r.diesel != null)
     .sort((a, b) => new Date(b.diesel!.recorded_at).getTime() - new Date(a.diesel!.recorded_at).getTime())[0]?.diesel;
   const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
@@ -174,6 +179,11 @@ function SectionColumn({ meterReadings }: { meterReadings: LiveReadingPayload[] 
             </ResponsiveContainer>
         }
       </div>
+
+      {/* Consumption charts, right under Live Trend - each card owns its own
+          Daily/Monthly/Yearly toggle. */}
+      <EnergyConsumptionCard selectedPlantId={selectedPlantId ?? null} section={section} />
+      <DieselConsumptionCard selectedPlantId={selectedPlantId ?? null} section={section} />
 
       {/* Real-time metrics grid */}
       <div>
@@ -251,7 +261,7 @@ function PeriodToggle({ period, setPeriod }: { period: ConsumPeriod; setPeriod: 
 
 // Owns its own Daily/Monthly/Yearly toggle, independent of DieselConsumptionCard.
 function EnergyConsumptionCard({ selectedPlantId, section }: { selectedPlantId: string | null; section?: string }) {
-  const [period, setPeriod] = useState<ConsumPeriod>('monthly');
+  const [period, setPeriod] = useState<ConsumPeriod>('daily');
   const [view, setView] = useState<ConsumView>('source');
   const { dailyData, monthlyData, yearlyData } = useConsumptionSummary(period, selectedPlantId, section);
   const effectiveView: ConsumView = period === 'yearly' ? 'source' : view;
@@ -328,8 +338,8 @@ const SECTION_THEMES = [
 // Everything for one plant section (P1, P4, ...): its own Daily/Monthly/Yearly
 // toggle and the stats/consumption queries that depend on it, so switching
 // one plant's period never touches another plant's charts.
-function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, selectedPlantId, theme }: {
-  section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
+function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, energyReadings, selectedPlantId, theme }: {
+  section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; energyReadings: LiveReadingPayload[]; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
 }) {
   const { data: statsData } = useQuery({
     queryKey: ['dashboard-stats', selectedPlantId, section],
@@ -375,14 +385,8 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
         </div>
       </div>
 
-      {/* Live trend / real-time / phase-level detail */}
-      <SectionColumn meterReadings={readings} />
-
-      {/* Consumption charts - each card owns its own Daily/Monthly/Yearly toggle */}
-      <div className="space-y-5">
-        <EnergyConsumptionCard selectedPlantId={selectedPlantId} section={section} />
-        <DieselConsumptionCard selectedPlantId={selectedPlantId} section={section} />
-      </div>
+      {/* Live trend, consumption charts, real-time/phase-level detail */}
+      <SectionColumn meterReadings={readings} energyReadings={energyReadings} selectedPlantId={selectedPlantId} section={section} />
     </div>
   );
 }
@@ -411,16 +415,38 @@ export default function DashboardPage() {
       .filter((m: any) => (!selectedPlantId || m.plant_id === selectedPlantId) && m.plant_section)
       .map((m: any) => [m.meter_id, m.plant_section])
   );
+  // Each section's dedicated incomer meter (e.g. "P1 -Main Incoming Energy")
+  // is the single authoritative source for that section's live readings and
+  // CEB/Generator status. Other meters sharing the same plant_section are
+  // sub-circuits - averaging them in, or picking whichever one's generator
+  // field happened to connect first, is what made the source/generator
+  // indicator drift from an average and flicker between readings.
+  const mainIncomerIds = new Set<string>(
+    (metersData?.meters ?? [])
+      .filter((m: any) => (!selectedPlantId || m.plant_id === selectedPlantId) && m.plant_section && /main\s*incoming/i.test(m.name ?? m.meter_id ?? ''))
+      .map((m: any) => m.meter_id)
+  );
   const sections = Array.from(new Set(meterSections.values())).sort();
   const sectionData = sections.map((section) => {
     const idsInSection = new Set(Array.from(meterSections.entries()).filter(([, s]) => s === section).map(([id]) => id));
     const readingsInSection = meterReadings.filter((r) => r.meter_id && idsInSection.has(r.meter_id));
-    const sectionEnergy = aggregateEnergyReadings(readingsInSection.map((r) => r.energy).filter((x): x is EnergyReading => x != null));
+    const mainReadings = readingsInSection.filter((r) => r.meter_id && mainIncomerIds.has(r.meter_id));
+    // Fall back to every meter in the section if it hasn't been tagged with
+    // a dedicated incomer meter yet, so a section never goes blank.
+    const energyReadings = mainReadings.length > 0 ? mainReadings : readingsInSection;
+    const sectionEnergy = aggregateEnergyReadings(energyReadings.map((r) => r.energy).filter((x): x is EnergyReading => x != null));
+    const genReadings = energyReadings.filter((r) => r.generator != null);
+    // Most-recent reading wins, not whichever meter happened to connect
+    // first (Map iteration order) - that's what caused the random flip.
+    const latestGen = genReadings.length > 0
+      ? genReadings.reduce((a, b) => (new Date(a.energy?.recorded_at ?? 0) > new Date(b.energy?.recorded_at ?? 0) ? a : b))
+      : undefined;
     return {
       section,
       isCEB: sectionEnergy?.source !== 'GENERATOR',
-      gen: readingsInSection.find((r) => r.generator != null)?.generator,
+      gen: latestGen?.generator,
       readings: readingsInSection,
+      energyReadings,
     };
   });
 

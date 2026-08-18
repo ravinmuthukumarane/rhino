@@ -4,6 +4,12 @@ import { AuthRequest } from '../types';
 
 // ── Plants ──────────────────────────────────────────────────
 
+// Plant 1 / Plant 4 first (in that order), then everything else (e.g.
+// Canteen) alphabetically - plain alphabetical order put "Canteen" ahead of
+// "Plant 1"/"Plant 4" everywhere plants are listed, which is the opposite of
+// the intended reading order.
+const PLANT_ORDER_SQL = `CASE WHEN p.name ILIKE 'Plant 1' THEN 0 WHEN p.name ILIKE 'Plant 4' THEN 1 ELSE 2 END, p.name`;
+
 export async function getPlants(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { rows } = await pool.query(
@@ -11,7 +17,7 @@ export async function getPlants(_req: AuthRequest, res: Response, next: NextFunc
               (SELECT COUNT(*) FROM energy_meters WHERE plant_id = p.id) AS energy_meter_count,
               (SELECT COUNT(*) FROM flow_meters WHERE plant_id = p.id) AS flow_meter_count,
               (SELECT COUNT(*) FROM generators WHERE plant_id = p.id) AS generator_count
-       FROM plants p ORDER BY p.name`
+       FROM plants p ORDER BY ${PLANT_ORDER_SQL}`
     );
     res.json({ plants: rows });
   } catch (err) { next(err); }
@@ -55,7 +61,7 @@ export async function getEnergyMeters(_req: AuthRequest, res: Response, next: Ne
   try {
     const { rows } = await pool.query(
       `SELECT em.*, p.name AS plant_name FROM energy_meters em
-       LEFT JOIN plants p ON p.id = em.plant_id ORDER BY p.name, em.name`
+       LEFT JOIN plants p ON p.id = em.plant_id ORDER BY ${PLANT_ORDER_SQL}, em.name`
     );
     res.json({ meters: rows });
   } catch (err) { next(err); }
@@ -99,7 +105,7 @@ export async function getFlowMeters(_req: AuthRequest, res: Response, next: Next
   try {
     const { rows } = await pool.query(
       `SELECT fm.*, p.name AS plant_name FROM flow_meters fm
-       LEFT JOIN plants p ON p.id = fm.plant_id ORDER BY p.name, fm.name`
+       LEFT JOIN plants p ON p.id = fm.plant_id ORDER BY ${PLANT_ORDER_SQL}, fm.name`
     );
     res.json({ meters: rows });
   } catch (err) { next(err); }
@@ -143,7 +149,7 @@ export async function getGenerators(_req: AuthRequest, res: Response, next: Next
   try {
     const { rows } = await pool.query(
       `SELECT g.*, p.name AS plant_name FROM generators g
-       LEFT JOIN plants p ON p.id = g.plant_id ORDER BY p.name, g.name`
+       LEFT JOIN plants p ON p.id = g.plant_id ORDER BY ${PLANT_ORDER_SQL}, g.name`
     );
     res.json({ generators: rows });
   } catch (err) { next(err); }
