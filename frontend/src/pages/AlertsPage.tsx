@@ -19,7 +19,6 @@ const TYPE_OPTS = [
   { value: 'low_voltage', label: 'Low Voltage' },
   { value: 'low_power_factor', label: 'Low Power Factor' },
   { value: 'high_kva', label: 'High KVA' },
-  { value: 'high_third_harmonic', label: 'High 3rd Harmonic' },
   { value: 'power_interruption', label: 'Power Interruption' },
   { value: 'power_restored', label: 'Power Restored' },
 ];

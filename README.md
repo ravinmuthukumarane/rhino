@@ -4,11 +4,11 @@ A comprehensive full-stack energy monitoring and reporting platform with real-ti
 
 ## Features
 
-- **Real-time Monitoring**: Live voltage, current, power, KVA, power factor, and 3rd harmonic tracking across multiple plants
+- **Real-time Monitoring**: Live voltage, current, power, apparent power (KVA), and power factor tracking across multiple plants
 - **Multi-Plant Architecture**: Separate device registries and readings per location with unified dashboard
 - **Device Registry**: Centralized management of energy meters, flow meters, and generators
 - **Alert System**: Configurable thresholds with email notifications and manual acknowledgment
-- **Power Quality Monitoring**: 3-phase voltage/current/harmonic analysis with 3rd harmonic tracking
+- **Power Quality Monitoring**: 3-phase voltage/current analysis with apparent power tracking
 - **Comprehensive Reports**: Daily/monthly/yearly energy and diesel consumption reports in Excel/PDF
 - **Role-Based Access**: Admin (full control) and Viewer (read-only) roles
 - **Real-time Updates**: Socket.io for live readings, alerts, and power event notifications
@@ -211,7 +211,6 @@ The backend emits real-time events via Socket.io:
 | Low Voltage | Min voltage | 195V |
 | Low Power Factor | Min PF | 0.85 |
 | High KVA | Max apparent power | 100 kVA |
-| High 3rd Harmonic | Max THD % | 5% |
 | Power Interruption | Event-based | - |
 
 ## Time Periods

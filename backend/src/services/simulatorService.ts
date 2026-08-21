@@ -86,9 +86,6 @@ async function tick(state: SimState, io: Server): Promise<void> {
   const pf = parseFloat(rand(0.82, 0.98).toFixed(3));
   const kva = parseFloat(((vR * iR + vY * iY + vB * iB) / 1000).toFixed(2));
   const kw = parseFloat((kva * pf).toFixed(2));
-  const h3r = parseFloat(rand(1.5, 6.5).toFixed(2));
-  const h3y = parseFloat(rand(1.5, 6.5).toFixed(2));
-  const h3b = parseFloat(rand(1.5, 6.5).toFixed(2));
 
   state.baseKwh += kw * interval;
   const kwh = parseFloat(state.baseKwh.toFixed(3));
@@ -98,13 +95,12 @@ async function tick(state: SimState, io: Server): Promise<void> {
        (meter_id, plant_id, voltage_r, voltage_y, voltage_b,
         current_r, current_y, current_b,
         power_kw, power_kva, power_factor, energy_kwh, frequency,
-        third_harmonic_r, third_harmonic_y, third_harmonic_b,
         source, time_period)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING *`,
     [state.meterId, state.plantId, vR, vY, vB, iR, iY, iB,
      kw, kva, pf, kwh, parseFloat((50 + rand(-0.2, 0.2)).toFixed(2)),
-     h3r, h3y, h3b, source, timePeriod]
+     source, timePeriod]
   );
 
   // Diesel

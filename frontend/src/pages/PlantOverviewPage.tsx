@@ -193,10 +193,6 @@ export default function PlantOverviewPage() {
                 <span className="text-gray-600 dark:text-gray-400">PF</span>
                 <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? parseFloat(String(reading.power_factor)).toFixed(3) : '—'}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600 dark:text-gray-400">3rd Harmonic</span>
-                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.third_harmonic_r != null ? parseFloat(String(reading.third_harmonic_r)).toFixed(2) : '—'}%</span>
-              </div>
             </div>
           ) : (
             <p className="text-xs text-gray-500">No readings yet</p>

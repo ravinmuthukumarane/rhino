@@ -71,7 +71,7 @@ export default function DeviceSetpointsTab() {
       toast.error('Select a meter first');
       return;
     }
-    const alertTypes = ['over_voltage', 'low_voltage', 'low_power_factor', 'high_kva', 'high_third_harmonic', 'power_interruption'];
+    const alertTypes = ['over_voltage', 'low_voltage', 'low_power_factor', 'high_kva', 'power_interruption'];
     const existingTypes = setpoints?.setpoints?.filter((s: any) => s.source === 'device').map((s: any) => s.alert_type) || [];
     const available = alertTypes.find(t => !existingTypes.includes(t));
 

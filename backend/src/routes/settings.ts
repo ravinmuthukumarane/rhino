@@ -29,4 +29,10 @@ router.post('/generators', requireAdmin, sc.createGenerator);
 router.put('/generators/:id', requireAdmin, sc.updateGenerator);
 router.delete('/generators/:id', requireAdmin, sc.deleteGenerator);
 
+// Power Status Sensors
+router.get('/power-status-sensors', sc.getPowerStatusSensors);
+router.post('/power-status-sensors', requireAdmin, sc.createPowerStatusSensor);
+router.put('/power-status-sensors/:id', requireAdmin, sc.updatePowerStatusSensor);
+router.delete('/power-status-sensors/:id', requireAdmin, sc.deletePowerStatusSensor);
+
 export default router;

@@ -54,7 +54,7 @@ Smart Meter → Modbus Gateway → Backend (MQTT/REST) → Database
 ### Data Storage (3 Levels)
 ```
 Level 1: Raw Readings (Stored every 5 seconds)
-├─ energy_readings (voltage, current, power, harmonics, etc)
+├─ energy_readings (voltage, current, power, apparent power, etc)
 ├─ diesel_readings (flow rate, volume)
 └─ generator_events (on/off status)
 
@@ -97,7 +97,7 @@ Raw Reading → Check against Setpoints
 - `device_alert_setpoints` - Per-device alert overrides
 
 ### Readings
-- `energy_readings` - Voltage, current, power, harmonics (5-sec interval)
+- `energy_readings` - Voltage, current, power, apparent power (5-sec interval)
 - `diesel_readings` - Flow rate, volume (5-sec interval)
 - `generator_events` - Generator on/off events
 - `power_interruptions` - Power cut/restore events
@@ -122,7 +122,7 @@ Raw Reading → Check against Setpoints
 
 ### 1️⃣ Real-time Monitoring
 - Live dashboard with 3-phase power quality metrics
-- Real-time voltage, current, power, power factor, harmonics
+- Real-time voltage, current, power, apparent power, power factor
 - Live generator vs CEB indicator with automatic switchover detection
 
 ### 2️⃣ Multi-Plant Support
@@ -141,11 +141,11 @@ Raw Reading → Check against Setpoints
 - **Generator Analysis:** CEB vs Generator usage, switchover counts, run hours
 - **Device Comparison:** Side-by-side comparison of multiple meters
 - **Consumption Trends:** Historical trends over 1-365 days
-- **Power Quality:** Voltage, current, harmonic analysis
+- **Power Quality:** Voltage, current, apparent power analysis
 - **Export:** Excel (.xlsx) and PDF formats
 
 ### 5️⃣ Alert System
-- 6 alert types: Over Voltage, Low Voltage, Low Power Factor, High KVA, High 3rd Harmonic, Power Interruption
+- 5 alert types: Over Voltage, Low Voltage, Low Power Factor, High KVA, Power Interruption
 - Global + Device-level setpoints (device overrides global)
 - 3 severity levels: Critical (red), Warning (yellow), Info (blue)
 - Email notifications (configurable per alert type)

@@ -40,7 +40,6 @@ async function canEmail(alertType: string): Promise<boolean> {
 export async function checkAndAlert(reading: EnergyReading, io: Server): Promise<void> {
   const sp = await getSetpoints();
   const avgV = ((reading.voltage_r ?? 0) + (reading.voltage_y ?? 0) + (reading.voltage_b ?? 0)) / 3;
-  const avgH = ((reading.third_harmonic_r ?? 0) + (reading.third_harmonic_y ?? 0) + (reading.third_harmonic_b ?? 0)) / 3;
   const alerts: Partial<Alert>[] = [];
 
   if (sp.over_voltage?.max_value != null && avgV > sp.over_voltage.max_value)
@@ -56,9 +55,6 @@ export async function checkAndAlert(reading: EnergyReading, io: Server): Promise
   const kva = typeof reading.power_kva === 'string' ? parseFloat(reading.power_kva) : (reading.power_kva ?? 0);
   if (sp.high_kva?.max_value != null && kva > sp.high_kva.max_value)
     alerts.push({ alert_type: 'high_kva', severity: 'warning', message: `High KVA demand: ${kva.toFixed(1)} kVA (limit: ${sp.high_kva.max_value})`, value: kva, setpoint_value: sp.high_kva.max_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
-
-  if (sp.high_third_harmonic?.max_value != null && avgH > sp.high_third_harmonic.max_value)
-    alerts.push({ alert_type: 'high_third_harmonic', severity: 'warning', message: `High 3rd harmonic THD: ${avgH.toFixed(1)}% (limit: ${sp.high_third_harmonic.max_value}%)`, value: avgH, setpoint_value: sp.high_third_harmonic.max_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
 
   for (const data of alerts) {
     const alert = await insertAlert(data);

@@ -35,9 +35,6 @@ function aggregateEnergyReadings(readings: EnergyReading[]): EnergyReading | nul
     power_kva: sum('power_kva'),
     power_factor: avg('power_factor'),
     frequency: avg('frequency'),
-    third_harmonic_r: avg('third_harmonic_r'),
-    third_harmonic_y: avg('third_harmonic_y'),
-    third_harmonic_b: avg('third_harmonic_b'),
   };
 }
 
@@ -100,7 +97,7 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
   meterReadings: LiveReadingPayload[]; energyReadings?: LiveReadingPayload[]; selectedPlantId?: string | null; section?: string;
 }) {
   const [liveHistory, setLiveHistory] = useState<any[]>([]);
-  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'|'harmonic'>('power');
+  const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'>('power');
 
   // Falls back to every meter in the section when no dedicated incomer
   // reading is available yet (e.g. the plant-wide view, which passes none).
@@ -125,9 +122,6 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
       'kW': +parseFloat(String(e.power_kw)).toFixed(2),
       'kVA': +parseFloat(String(e.power_kva)).toFixed(2),
       PF: +parseFloat(String(e.power_factor)).toFixed(3),
-      'H3-R': +parseFloat(String(e.third_harmonic_r ?? 0)).toFixed(2),
-      'H3-Y': +parseFloat(String(e.third_harmonic_y ?? 0)).toFixed(2),
-      'H3-B': +parseFloat(String(e.third_harmonic_b ?? 0)).toFixed(2),
     };
     setTimeout(() => setLiveHistory((prev) => [...prev.slice(-(MAX_LIVE - 1)), point]), 0);
   }
@@ -137,16 +131,13 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
     current: [{ key:'IR', color:'#ef4444' }, { key:'IY', color:'#eab308' }, { key:'IB', color:'#3b82f6' }],
     power:   [{ key:'kW', color:'#22c55e' }, { key:'kVA', color:'#8b5cf6' }],
     pf:      [{ key:'PF', color:'#06b6d4' }],
-    harmonic:[{ key:'H3-R', color:'#ef4444' }, { key:'H3-Y', color:'#eab308' }, { key:'H3-B', color:'#3b82f6' }],
   };
 
   const avgV = e ? ((+e.voltage_r + +e.voltage_y + +e.voltage_b) / 3).toFixed(1) : null;
   const avgI = e ? ((+e.current_r + +e.current_y + +e.current_b) / 3).toFixed(1) : null;
-  const avgH3 = e?.third_harmonic_r != null ? (((e.third_harmonic_r ?? 0) + (e.third_harmonic_y ?? 0) + (e.third_harmonic_b ?? 0)) / 3).toFixed(2) : null;
 
   const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
   const pfColor = !e?.power_factor ? 'primary' : +e.power_factor < 0.80 ? 'red' : +e.power_factor < 0.85 ? 'yellow' : 'green';
-  const h3Color = !avgH3 ? 'cyan' : +avgH3 > 5 ? 'red' : +avgH3 > 3 ? 'yellow' : 'cyan';
 
   return (
     <div className="space-y-5">
@@ -155,10 +146,10 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Live Trend</p>
           <div className="flex flex-wrap gap-1 ml-2">
-            {(['voltage','current','power','pf','harmonic'] as const).map((m) => (
+            {(['voltage','current','power','pf'] as const).map((m) => (
               <button key={m} onClick={() => setLiveMetric(m)}
                 className={`text-xs px-2.5 py-1 rounded-lg transition-colors ${liveMetric === m ? 'bg-primary-700 text-white' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}>
-                {m === 'harmonic' ? '3rd Harmonic' : m.charAt(0).toUpperCase() + m.slice(1)}
+                {m.charAt(0).toUpperCase() + m.slice(1)}
               </button>
             ))}
           </div>
@@ -194,7 +185,6 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
           <MetricCard label="Power (kW)" value={e ? numFmt(e.power_kw, 2) : null} color="green" />
           <MetricCard label="KVA (Max Demand)" value={e ? numFmt(e.power_kva, 2) : null} color="purple" />
           <MetricCard label="Power Factor" value={e ? parseFloat(String(e.power_factor)).toFixed(3) : null} color={pfColor} />
-          <MetricCard label="3rd Harmonic" value={avgH3} unit="%" color={h3Color} sub="Avg R/Y/B" />
         </div>
       </div>
 
@@ -208,9 +198,7 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
           <MetricCard label="I-R" value={e ? parseFloat(String(e.current_r)).toFixed(1) : null} unit="A" color="red" />
           <MetricCard label="I-Y" value={e ? parseFloat(String(e.current_y)).toFixed(1) : null} unit="A" color="yellow" />
           <MetricCard label="I-B" value={e ? parseFloat(String(e.current_b)).toFixed(1) : null} unit="A" color="blue" />
-          <MetricCard label="3H-R" value={e?.third_harmonic_r != null ? parseFloat(String(e.third_harmonic_r)).toFixed(2) : null} unit="%" color="red" />
-          <MetricCard label="3H-Y" value={e?.third_harmonic_y != null ? parseFloat(String(e.third_harmonic_y)).toFixed(2) : null} unit="%" color="yellow" />
-          <MetricCard label="3H-B" value={e?.third_harmonic_b != null ? parseFloat(String(e.third_harmonic_b)).toFixed(2) : null} unit="%" color="blue" />
+          <MetricCard label="Apparent Power" value={e ? numFmt(e.power_kva, 2) : null} unit="kVA" color="purple" />
           <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
           <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
           <MetricCard label="Flow Rate" value={d ? numFmt(d.flow_rate, 2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />

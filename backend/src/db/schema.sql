@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS generators (
 );
 
 -- ============================================================
--- ENERGY READINGS (includes 3rd harmonics)
+-- ENERGY READINGS
 -- ============================================================
 CREATE TABLE IF NOT EXISTS energy_readings (
   id BIGSERIAL PRIMARY KEY,
@@ -111,14 +111,15 @@ CREATE TABLE IF NOT EXISTS energy_readings (
   power_factor NUMERIC(5,3),
   energy_kwh NUMERIC(14,3),
   frequency NUMERIC(5,2) DEFAULT 50.0,
-  -- 3rd harmonic as % of fundamental
-  third_harmonic_r NUMERIC(6,2),
-  third_harmonic_y NUMERIC(6,2),
-  third_harmonic_b NUMERIC(6,2),
   source VARCHAR(20) DEFAULT 'CEB' CHECK (source IN ('CEB', 'GENERATOR')),
   time_period VARCHAR(20) CHECK (time_period IN ('day', 'peak', 'off_peak')),
   recorded_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Existing deployments: drop the never-populated 3rd harmonic columns.
+ALTER TABLE energy_readings DROP COLUMN IF EXISTS third_harmonic_r;
+ALTER TABLE energy_readings DROP COLUMN IF EXISTS third_harmonic_y;
+ALTER TABLE energy_readings DROP COLUMN IF EXISTS third_harmonic_b;
 
 CREATE INDEX IF NOT EXISTS idx_er_recorded_at   ON energy_readings (recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_er_meter_id       ON energy_readings (meter_id);
@@ -163,6 +164,31 @@ CREATE TABLE IF NOT EXISTS generator_events (
 
 CREATE INDEX IF NOT EXISTS idx_ge_recorded_at ON generator_events (recorded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ge_plant_id     ON generator_events (plant_id);
+
+-- ============================================================
+-- POWER STATUS SENSORS
+-- ATS/transfer-switch digital status inputs (not CT-metered) that report
+-- which power source is live for a plant section - the source of truth
+-- for CEB/Generator status, feeding generator_events + the dashboard's
+-- live indicator, distinct from the CT-metered "GENERATOR" energy meters
+-- which measure the generator's output power, not its on/off state.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS power_status_sensors (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sensor_id VARCHAR(100) UNIQUE NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
+  plant_section VARCHAR(20),              -- physical section this sensor reports on, e.g. "P1", "P4"
+  device_id VARCHAR(50) UNIQUE,           -- MQTT bridge device id, e.g. "u119_12"
+  generator_id VARCHAR(100) NOT NULL,     -- generator_events.generator_id this sensor's ON/OFF is recorded under
+  main_meter_id VARCHAR(100),             -- the section's Main Incoming Energy meter_id; live status is merged
+                                           -- onto that meter's live_reading so the dashboard picks it up
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pss_plant_id ON power_status_sensors(plant_id);
 
 -- ============================================================
 -- POWER INTERRUPTIONS

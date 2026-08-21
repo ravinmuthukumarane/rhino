@@ -86,9 +86,6 @@ MQTT_BROKER_URL=mqtt://username:password@your-broker-ip:1883
   "power_factor": 0.926,
   "energy_kwh": 12345.67,
   "frequency": 50.0,
-  "third_harmonic_r": 2.3,
-  "third_harmonic_y": 2.1,
-  "third_harmonic_b": 2.5,
   "source": "CEB",
   "timestamp": 1686153600000
 }
@@ -104,7 +101,6 @@ MQTT_BROKER_URL=mqtt://username:password@your-broker-ip:1883
 - `voltage_y`, `voltage_b`: Defaults to voltage_r if not provided
 - `current_y`, `current_b`: Defaults to current_r if not provided
 - `frequency`: Defaults to 50.0
-- `third_harmonic_*`: Defaults to 0
 - `source`: 'CEB' or 'GENERATOR', defaults to 'CEB'
 - `timestamp`: Unix timestamp in milliseconds, defaults to now
 
@@ -296,9 +292,6 @@ CREATE TABLE energy_readings (
   power_factor NUMERIC(5,3),
   energy_kwh NUMERIC(14,3),
   frequency NUMERIC(5,2),
-  third_harmonic_r NUMERIC(6,2),
-  third_harmonic_y NUMERIC(6,2),
-  third_harmonic_b NUMERIC(6,2),
   source VARCHAR(20),
   time_period VARCHAR(20),
   recorded_at TIMESTAMPTZ DEFAULT NOW()

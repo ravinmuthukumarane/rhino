@@ -87,7 +87,6 @@ export default function SetpointsPage() {
           <li><strong className="text-gray-700 dark:text-gray-300">Low Voltage</strong> — Min: alert fires if avg phase voltage drops below this</li>
           <li><strong className="text-gray-700 dark:text-gray-300">Low Power Factor</strong> — Min: alert fires if PF drops below this (0–1)</li>
           <li><strong className="text-gray-700 dark:text-gray-300">High KVA</strong> — Max: alert fires if apparent power exceeds this</li>
-          <li><strong className="text-gray-700 dark:text-gray-300">High 3rd Harmonic</strong> — Max: alert fires if THD % exceeds this</li>
           <li><strong className="text-gray-700 dark:text-gray-300">Power Interruption</strong> — No threshold; fires on CEB→Generator switch</li>
         </ul>
       </div>

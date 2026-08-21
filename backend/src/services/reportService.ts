@@ -67,7 +67,7 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
   const { rows } = await pool.query(
     `SELECT er.recorded_at, p.name AS plant_name, er.meter_id, er.voltage_r, er.voltage_y, er.voltage_b,
             er.current_r, er.current_y, er.current_b, er.power_kw, er.power_kva, er.power_factor,
-            er.third_harmonic_r, er.third_harmonic_y, er.third_harmonic_b, er.frequency, er.source
+            er.frequency, er.source
      FROM energy_readings er LEFT JOIN plants p ON p.id=er.plant_id
      WHERE er.recorded_at BETWEEN $1 AND $2
        AND ($3::uuid IS NULL OR er.plant_id=$3) AND ($4::text IS NULL OR er.meter_id=$4)
@@ -76,8 +76,8 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
   );
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Power Quality');
-  hdr(ws, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','3H-R%','3H-Y%','3H-B%','Hz','Source']);
-  rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),r.plant_name,r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,r.power_factor,r.third_harmonic_r,r.third_harmonic_y,r.third_harmonic_b,r.frequency,r.source]));
+  hdr(ws, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','Hz','Source']);
+  rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),r.plant_name,r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,r.power_factor,r.frequency,r.source]));
   return wb;
 }
 

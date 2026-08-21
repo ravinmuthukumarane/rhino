@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi } from '../services/api';
-import { Factory, Plus, Edit2, Trash2, Check, X, Zap, Droplets, Cpu, AlertCircle } from 'lucide-react';
+import { Factory, Plus, Edit2, Trash2, Check, X, Zap, Droplets, Cpu, Activity, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
-import type { Plant, EnergyMeter, FlowMeter, Generator } from '../types';
+import type { Plant, EnergyMeter, FlowMeter, Generator, PowerStatusSensor } from '../types';
 import DeviceSetpointsTab from '../components/DeviceSetpointsTab';
 
-type Tab = 'plants' | 'energy' | 'flow' | 'generators' | 'setpoints';
+type Tab = 'plants' | 'energy' | 'flow' | 'generators' | 'power-status' | 'setpoints';
 
 const ENERGY_METER_MODELS = [
   'Schneider PM2120',
@@ -184,6 +184,47 @@ function GeneratorRow({ gen, plants, onSave, onDelete }: { gen?: Generator; plan
   );
 }
 
+function PowerStatusSensorRow({ sensor, plants, onSave, onDelete }: { sensor?: PowerStatusSensor; plants: Plant[]; onSave: (data: object, id?: string) => void; onDelete?: (id: string) => void }) {
+  const isNew = !sensor;
+  const [f, setF] = useState({ sensor_id: sensor?.sensor_id ?? '', name: sensor?.name ?? '', plant_id: sensor?.plant_id ?? '', plant_section: sensor?.plant_section ?? '', generator_id: sensor?.generator_id ?? '', is_active: sensor?.is_active ?? true });
+  const [open, setOpen] = useState(isNew);
+
+  if (!open && !isNew) return (
+    <tr className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
+      <td className="px-4 py-3 font-mono text-cyan-600 dark:text-cyan-400 text-sm">{sensor!.sensor_id}</td>
+      <td className="px-4 py-3 text-gray-800 dark:text-gray-200 text-sm">{sensor!.name}</td>
+      <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-sm">{sensor!.plant_name ?? '—'}</td>
+      <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-sm">{sensor!.plant_section ?? '—'}</td>
+      <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-400 text-sm">{sensor!.generator_id}</td>
+      <td className="px-4 py-3">{sensor!.is_active ? <span className="badge-success">Active</span> : <span className="text-gray-500 text-xs">Inactive</span>}</td>
+      <td className="px-4 py-3">
+        <div className="flex gap-1">
+          <button onClick={() => setOpen(true)} className="p-1.5 text-gray-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-cyan-500/10 rounded transition-colors"><Edit2 className="w-3.5 h-3.5" /></button>
+          <button onClick={() => { if (confirm(`Delete power status sensor "${sensor!.name}" (${sensor!.sensor_id})?`)) onDelete?.(sensor!.id); }}
+            className="p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      </td>
+    </tr>
+  );
+
+  return (
+    <tr className="border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800/20">
+      <td className="px-4 py-2"><input className="input text-sm font-mono" value={f.sensor_id} onChange={(e) => setF({ ...f, sensor_id: e.target.value })} placeholder="PS-P1" disabled={!isNew} /></td>
+      <td className="px-4 py-2"><input className="input text-sm" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="P1 Power Status" /></td>
+      <td className="px-4 py-2"><select className="input text-sm" value={f.plant_id} onChange={(e) => setF({ ...f, plant_id: e.target.value })}><option value="">— Select Plant —</option>{plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td>
+      <td className="px-4 py-2"><input className="input text-sm" value={f.plant_section} onChange={(e) => setF({ ...f, plant_section: e.target.value })} placeholder="P1" /></td>
+      <td className="px-4 py-2"><input className="input text-sm font-mono" value={f.generator_id} onChange={(e) => setF({ ...f, generator_id: e.target.value })} placeholder="GEN-P1" /></td>
+      <td className="px-4 py-2"><select className="input text-sm w-24" value={f.is_active ? 'true' : 'false'} onChange={(e) => setF({ ...f, is_active: e.target.value === 'true' })}><option value="true">Active</option><option value="false">Inactive</option></select></td>
+      <td className="px-4 py-2">
+        <div className="flex gap-1">
+          <button onClick={() => { onSave(f, sensor?.id); if (!isNew) setOpen(false); }} className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-500/10 rounded transition-colors"><Check className="w-3.5 h-3.5" /></button>
+          {!isNew && <button onClick={() => setOpen(false)} className="p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 rounded transition-colors"><X className="w-3.5 h-3.5" /></button>}
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────
 export default function DeviceSettingsPage() {
   const { isAdmin } = useAuth();
@@ -197,11 +238,13 @@ export default function DeviceSettingsPage() {
   const { data: emetersData } = useQuery({ queryKey: ['energy-meters'], queryFn: () => settingsApi.getEnergyMeters().then((r) => r.data) });
   const { data: fmetersData } = useQuery({ queryKey: ['flow-meters'], queryFn: () => settingsApi.getFlowMeters().then((r) => r.data) });
   const { data: gensData } = useQuery({ queryKey: ['generators'], queryFn: () => settingsApi.getGenerators().then((r) => r.data) });
+  const { data: pssData } = useQuery({ queryKey: ['power-status-sensors'], queryFn: () => settingsApi.getPowerStatusSensors().then((r) => r.data) });
 
   const plants: Plant[] = plantsData?.plants ?? [];
   const emeters: EnergyMeter[] = emetersData?.meters ?? [];
   const fmeters: FlowMeter[] = fmetersData?.meters ?? [];
   const generators: Generator[] = gensData?.generators ?? [];
+  const powerStatusSensors: PowerStatusSensor[] = pssData?.sensors ?? [];
 
   function mutate(createFn: (d: object) => Promise<any>, updateFn: (id: string, d: object) => Promise<any>, keys: string[]) {
     return useMutation({
@@ -227,12 +270,15 @@ export default function DeviceSettingsPage() {
   const fmDeleteMut = useDelete(settingsApi.deleteFlowMeter, 'flow-meters', 'Flow meter');
   const genMut = mutate(settingsApi.createGenerator, settingsApi.updateGenerator, ['generators']);
   const genDeleteMut = useDelete(settingsApi.deleteGenerator, 'generators', 'Generator');
+  const pssMut = mutate(settingsApi.createPowerStatusSensor, settingsApi.updatePowerStatusSensor, ['power-status-sensors']);
+  const pssDeleteMut = useDelete(settingsApi.deletePowerStatusSensor, 'power-status-sensors', 'Power status sensor');
 
   const tabs: { key: Tab; label: string; icon: any; count?: number; color: string }[] = [
     { key: 'plants', label: 'Plants', icon: Factory, count: plants.length, color: 'text-primary-600 dark:text-primary-400' },
     { key: 'energy', label: 'Energy Meters', icon: Zap, count: emeters.length, color: 'text-yellow-600 dark:text-yellow-400' },
     { key: 'flow', label: 'Flow Meters', icon: Droplets, count: fmeters.length, color: 'text-orange-600 dark:text-orange-400' },
     { key: 'generators', label: 'Generators', icon: Cpu, count: generators.length, color: 'text-green-600 dark:text-green-400' },
+    { key: 'power-status', label: 'Power Status Sensors', icon: Activity, count: powerStatusSensors.length, color: 'text-cyan-600 dark:text-cyan-400' },
     { key: 'setpoints', label: 'Device Setpoints', icon: AlertCircle, color: 'text-blue-600 dark:text-blue-400' },
   ];
 
@@ -240,7 +286,7 @@ export default function DeviceSettingsPage() {
     <div className="space-y-5">
       <div className="card">
         <div className="flex items-center gap-2 mb-1"><Factory className="w-5 h-5 text-primary-600 dark:text-primary-400" /><h3 className="font-semibold text-gray-800 dark:text-gray-200">Device Settings</h3></div>
-        <p className="text-sm text-gray-600 dark:text-gray-400">Assign energy meters, flow meters, and generators to plant locations. The simulator uses these for data generation.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">Assign energy meters, flow meters, generators, and power status sensors to plant locations. The simulator uses these for data generation.</p>
       </div>
 
       {/* Tab bar */}
@@ -299,6 +345,15 @@ export default function DeviceSettingsPage() {
                 {addNew && <GeneratorRow plants={plants} onSave={(d) => { genMut.mutate({ data: d }); setAddNew(false); }} />}
                 {generators.map((g) => <GeneratorRow key={g.id} gen={g} plants={plants} onSave={(d, id) => genMut.mutate({ data: d, id })} onDelete={(id) => genDeleteMut.mutate(id)} />)}
                 {generators.length === 0 && !addNew && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No generators configured.</td></tr>}
+              </tbody>
+            </>)}
+
+            {tab === 'power-status' && (<>
+              <thead><tr className="border-b border-gray-200 dark:border-gray-800">{['Sensor ID','Name','Plant','Section','Generator ID','Status',''].map((h) => <th key={h} className="text-left px-4 py-3 text-xs text-gray-500 font-medium">{h}</th>)}</tr></thead>
+              <tbody>
+                {addNew && <PowerStatusSensorRow plants={plants} onSave={(d) => { pssMut.mutate({ data: d }); setAddNew(false); }} />}
+                {powerStatusSensors.map((s) => <PowerStatusSensorRow key={s.id} sensor={s} plants={plants} onSave={(d, id) => pssMut.mutate({ data: d, id })} onDelete={(id) => pssDeleteMut.mutate(id)} />)}
+                {powerStatusSensors.length === 0 && !addNew && <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-500">No power status sensors configured.</td></tr>}
               </tbody>
             </>)}
           </table>

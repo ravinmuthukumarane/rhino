@@ -2,7 +2,7 @@ import mqtt, { MqttClient } from 'mqtt';
 import pool from '../config/database';
 import { checkAndAlert, checkPowerSwitch } from './alertService';
 import { getTimePeriod } from '../utils/timeUtils';
-import { EnergyReading, PowerSource } from '../types';
+import { EnergyReading, PowerSource, GeneratorStatus } from '../types';
 import { Server } from 'socket.io';
 
 interface MeterData {
@@ -37,15 +37,18 @@ export async function startMQTT(io: Server): Promise<void> {
     try {
       const data = JSON.parse(message.toString());
 
-      // A single shared topic carries energy, diesel, and flow-meter
-      // readings. Diesel payloads use an explicit 'type' field; the flow
-      // meter gateway instead reuses the device_id/tags envelope shared with
-      // energy meters, distinguishable by tags.flow_l1 being present (no
-      // voltage tag). Route on shape, not just the 'type' field.
+      // A single shared topic carries energy, diesel, flow-meter, and power-
+      // status readings. Diesel payloads use an explicit 'type' field; the
+      // flow meter gateway and the power-status (ATS) sensor instead reuse
+      // the device_id/tags envelope shared with energy meters, distinguished
+      // by tags.flow_l1 / tags.pa0_status being present (no voltage tag
+      // either way). Route on shape, not just the 'type' field.
       if (data.type === 'diesel') {
         await handleDieselReading(data, io);
       } else if (data.tags && typeof data.tags.flow_l1 === 'number') {
         await handleFlowTelemetry(data, io);
+      } else if (data.tags && typeof data.tags.pa0_status === 'number' && typeof data.tags.pa1_status === 'number') {
+        await handlePowerStatus(data, io);
       } else {
         await handleEnergyReading(data, io);
       }
@@ -82,6 +85,9 @@ interface DeviceTelemetry {
     // Flow meter gateway (shares this envelope instead of a distinct shape)
     flow_l1?: number; flow_l2?: number; flow_status?: number;
     flow_calib?: number; flow_scale?: number;
+    // Power status (ATS) sensor - digital status inputs, no voltage/current.
+    // pa0 = generator contact energized, pa1 = CEB/mains contact energized.
+    pa0_status?: number; pa1_status?: number;
   };
 }
 
@@ -132,9 +138,8 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
          (meter_id, plant_id, voltage_r, voltage_y, voltage_b,
           current_r, current_y, current_b,
           power_kw, power_kva, power_factor, energy_kwh, frequency,
-          third_harmonic_r, third_harmonic_y, third_harmonic_b,
           source, time_period, recorded_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
        RETURNING *`,
       [
         meterId,
@@ -150,7 +155,6 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
         tags.total_pf ?? 0,
         tags.import_kwh ?? 0,
         tags.freq ?? 50,
-        0, 0, 0,
         source,
         timePeriod,
         new Date(data.timestamp || Date.now()),
@@ -309,6 +313,69 @@ async function handleFlowTelemetry(data: DeviceTelemetry, io: Server): Promise<v
     console.log(`[MQTT] Flow reading stored: ${meterId} (device ${deviceId})`);
   } catch (err) {
     console.error('[MQTT] Error storing flow reading:', (err as Error).message);
+  }
+}
+
+// The ATS/power-status sensor also shares the device_id/tags envelope,
+// carrying only two digital contacts (pa0 = generator energized, pa1 = CEB
+// energized) instead of voltage/current. It's the authoritative live signal
+// for which source is feeding a plant section - individual meters' 'source'
+// column is a static per-meter label, not a live switch detector. A status
+// change is written to generator_events (same table/shape the simulator
+// writes to) and routed through the existing checkPowerSwitch alerting used
+// for the simulated CEB<->GENERATOR transition, then merged onto the
+// section's Main Incoming Energy meter's live_reading (via main_meter_id)
+// so the dashboard's existing per-meter live-reading map picks it up without
+// needing its own device-type-aware section grouping.
+async function handlePowerStatus(data: DeviceTelemetry, io: Server): Promise<void> {
+  try {
+    const deviceId = data.device_id;
+    const tags = data.tags;
+    if (!deviceId || typeof tags?.pa0_status !== 'number' || typeof tags?.pa1_status !== 'number') {
+      console.error('[MQTT] Invalid power status data:', data);
+      return;
+    }
+
+    const { rows } = await pool.query(
+      'SELECT plant_id, generator_id, main_meter_id FROM power_status_sensors WHERE device_id = $1',
+      [deviceId]
+    );
+    if (!rows[0]) {
+      console.error('[MQTT] Unknown power status device_id:', deviceId);
+      return;
+    }
+    const plantId: string | null = rows[0].plant_id;
+    const generatorId: string = rows[0].generator_id;
+    const mainMeterId: string | null = rows[0].main_meter_id;
+
+    const genOn = tags.pa0_status >= 0.5;
+    const status: GeneratorStatus = genOn ? 'ON' : 'OFF';
+
+    const { rows: [lastGe] } = await pool.query(
+      'SELECT status FROM generator_events WHERE generator_id=$1 ORDER BY recorded_at DESC LIMIT 1',
+      [generatorId]
+    );
+
+    if (lastGe?.status !== status) {
+      await pool.query(
+        'INSERT INTO generator_events (generator_id, plant_id, status, reason) VALUES ($1,$2,$3,$4)',
+        [generatorId, plantId, status, status === 'ON' ? 'power_cut' : 'power_restored']
+      );
+
+      const current: PowerSource = genOn ? 'GENERATOR' : 'CEB';
+      const previous: PowerSource | null = lastGe ? (lastGe.status === 'ON' ? 'GENERATOR' : 'CEB') : null;
+      await checkPowerSwitch(current, previous, plantId, generatorId, io);
+    }
+
+    io.emit('live_reading', {
+      generator: { status, generator_id: generatorId },
+      plant_id: plantId,
+      meter_id: mainMeterId,
+    });
+
+    console.log(`[MQTT] Power status stored: ${generatorId} = ${status} (device ${deviceId})`);
+  } catch (err) {
+    console.error('[MQTT] Error storing power status:', (err as Error).message);
   }
 }
 

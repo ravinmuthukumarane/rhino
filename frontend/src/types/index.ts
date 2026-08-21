@@ -68,6 +68,17 @@ export interface Generator {
   is_active: boolean;
 }
 
+export interface PowerStatusSensor {
+  id: string;
+  sensor_id: string;
+  name: string;
+  plant_id: string;
+  plant_name?: string;
+  plant_section?: string;
+  generator_id: string;
+  is_active: boolean;
+}
+
 export interface EnergyReading {
   id: number;
   meter_id: string;
@@ -84,9 +95,6 @@ export interface EnergyReading {
   power_factor: number;
   energy_kwh: number;
   frequency: number;
-  third_harmonic_r?: number;
-  third_harmonic_y?: number;
-  third_harmonic_b?: number;
   source: PowerSource;
   time_period: TimePeriod;
   recorded_at: string;

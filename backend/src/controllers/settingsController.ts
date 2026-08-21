@@ -186,3 +186,50 @@ export async function deleteGenerator(req: AuthRequest, res: Response, next: Nex
     res.json({ message: 'Generator deleted' });
   } catch (err) { next(err); }
 }
+
+// ── Power Status Sensors ───────────────────────────────────
+// device_id and main_meter_id are intentionally not settable here (same as
+// energy/flow meters' device_id) - they're wired up by hand for a real
+// physical sensor, same one-off process described in DEPLOY.md.
+
+export async function getPowerStatusSensors(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { rows } = await pool.query(
+      `SELECT pss.*, p.name AS plant_name FROM power_status_sensors pss
+       LEFT JOIN plants p ON p.id = pss.plant_id ORDER BY ${PLANT_ORDER_SQL}, pss.name`
+    );
+    res.json({ sensors: rows });
+  } catch (err) { next(err); }
+}
+
+export async function createPowerStatusSensor(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { sensor_id, name, plant_id, plant_section, generator_id } = req.body as Record<string, string>;
+  try {
+    const { rows: [sensor] } = await pool.query(
+      'INSERT INTO power_status_sensors (sensor_id, name, plant_id, plant_section, generator_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
+      [sensor_id, name, plant_id ?? null, plant_section ?? null, generator_id]
+    );
+    res.status(201).json({ sensor });
+  } catch (err) { next(err); }
+}
+
+export async function updatePowerStatusSensor(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  const { name, plant_id, plant_section, generator_id, is_active } = req.body as Record<string, any>;
+  try {
+    const { rows: [sensor] } = await pool.query(
+      'UPDATE power_status_sensors SET name=$1, plant_id=$2, plant_section=$3, generator_id=$4, is_active=$5 WHERE id=$6 RETURNING *',
+      [name, plant_id ?? null, plant_section ?? null, generator_id, is_active ?? true, id]
+    );
+    if (!sensor) { res.status(404).json({ error: 'Power status sensor not found' }); return; }
+    res.json({ sensor });
+  } catch (err) { next(err); }
+}
+
+export async function deletePowerStatusSensor(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const { id } = req.params;
+  try {
+    await pool.query('DELETE FROM power_status_sensors WHERE id=$1', [id]);
+    res.json({ message: 'Power status sensor deleted' });
+  } catch (err) { next(err); }
+}

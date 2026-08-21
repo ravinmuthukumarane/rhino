@@ -176,7 +176,6 @@
 - [ ] Low Voltage min: 195V
 - [ ] Low Power Factor min: 0.85
 - [ ] High KVA max: 100
-- [ ] High 3rd Harmonic max: 5%
 
 ### Override Specific Devices (Optional)
 Example: Make P4.1 more strict (lower voltage)

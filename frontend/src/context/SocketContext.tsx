@@ -16,7 +16,19 @@ function applyReading(map: PlantReadings, data: LiveReadingPayload): PlantReadin
   const next = new Map(map);
   const meterKey = data.meter_id ?? '__plant__';
   const plantMeters = new Map(next.get(data.plant_id));
-  plantMeters.set(meterKey, data);
+  const prev = plantMeters.get(meterKey);
+  // Merge rather than replace: the power-status sensor emits a
+  // generator-only update onto the section's Main Incoming Energy meter's
+  // key, on its own schedule independent of that meter's own energy
+  // readings - a plain overwrite would blank out its energy/diesel data
+  // between messages instead of layering the generator status on top.
+  plantMeters.set(meterKey, prev ? {
+    ...prev,
+    ...data,
+    energy: data.energy ?? prev.energy,
+    diesel: data.diesel ?? prev.diesel,
+    generator: data.generator ?? prev.generator,
+  } : data);
   next.set(data.plant_id, plantMeters);
   return next;
 }

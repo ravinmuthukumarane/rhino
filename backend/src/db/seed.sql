@@ -1,3 +1,11 @@
+-- Existing deployments: remove the retired 3rd harmonic alert type.
+DO $$ BEGIN
+  IF to_regclass('device_alert_setpoints') IS NOT NULL THEN
+    DELETE FROM device_alert_setpoints WHERE alert_type = 'high_third_harmonic';
+  END IF;
+END $$;
+DELETE FROM alert_setpoints WHERE alert_type = 'high_third_harmonic';
+
 -- Default alert setpoints
 INSERT INTO alert_setpoints (alert_type, label, unit, min_value, max_value, enabled, email_notify)
 VALUES
@@ -5,7 +13,6 @@ VALUES
   ('low_voltage',         'Low Voltage',          'V',    195.0, NULL,  true, true),
   ('low_power_factor',    'Low Power Factor',     NULL,   0.85,  NULL,  true, true),
   ('high_kva',            'High KVA Demand',      'kVA',  NULL,  100.0, true, true),
-  ('high_third_harmonic', 'High 3rd Harmonic THD','%',    NULL,  5.0,   true, true),
   ('power_interruption',  'Power Interruption',   NULL,   NULL,  NULL,  true, true)
 ON CONFLICT (alert_type) DO NOTHING;
 

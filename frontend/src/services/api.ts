@@ -86,6 +86,10 @@ export const settingsApi = {
   createGenerator: (data: object) => api.post('/settings/generators', data),
   updateGenerator: (id: string, data: object) => api.put(`/settings/generators/${id}`, data),
   deleteGenerator: (id: string) => api.delete(`/settings/generators/${id}`),
+  getPowerStatusSensors: () => api.get('/settings/power-status-sensors'),
+  createPowerStatusSensor: (data: object) => api.post('/settings/power-status-sensors', data),
+  updatePowerStatusSensor: (id: string, data: object) => api.put(`/settings/power-status-sensors/${id}`, data),
+  deletePowerStatusSensor: (id: string) => api.delete(`/settings/power-status-sensors/${id}`),
 };
 
 export function downloadBlob(blob: Blob, filename: string): void {
