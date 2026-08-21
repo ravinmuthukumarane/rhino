@@ -429,9 +429,14 @@ export default function DashboardPage() {
     const latestGen = genReadings.length > 0
       ? genReadings.reduce((a, b) => (new Date(a.energy?.recorded_at ?? 0) > new Date(b.energy?.recorded_at ?? 0) ? a : b))
       : undefined;
+    // The power status sensor's live ON/OFF is the real signal - a meter's
+    // 'source' column is a static per-meter label (energy_meters.default_source),
+    // never updated live, so it can't reflect an actual CEB<->Generator switch.
+    // Only fall back to it for sections with no power status sensor registered yet.
+    const genStatus = latestGen?.generator?.status;
     return {
       section,
-      isCEB: sectionEnergy?.source !== 'GENERATOR',
+      isCEB: genStatus != null ? genStatus !== 'ON' : sectionEnergy?.source !== 'GENERATOR',
       gen: latestGen?.generator,
       readings: readingsInSection,
       energyReadings,
