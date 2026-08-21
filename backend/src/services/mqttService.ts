@@ -114,7 +114,7 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     const voltB = tags.volt_l3 ?? tags.volt_cn ?? tags.volt_ca ?? voltR;
 
     const { rows } = await pool.query(
-      'SELECT meter_id, plant_id, default_source FROM energy_meters WHERE device_id = $1',
+      'SELECT meter_id, plant_id, default_source, model FROM energy_meters WHERE device_id = $1',
       [deviceId]
     );
     if (!rows[0]) {
@@ -124,10 +124,14 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     const meterId: string = rows[0].meter_id;
     const plantId: string = rows[0].plant_id;
     const source: PowerSource = (rows[0].default_source as PowerSource) ?? 'CEB';
+    // Unlike the Wattz/Circutor gateways (Watts/VA, needs /1000), the
+    // Schneider PM2120 gateway already publishes total_power/total_app in
+    // kW/kVA - applying POWER_SCALE to it too under-scales by another 1000x.
+    const powerScale = rows[0].model === 'Schneider PM2120' ? 1 : POWER_SCALE;
 
     const timePeriod = getTimePeriod();
-    const powerKw = (tags.total_power ?? 0) * POWER_SCALE;
-    const powerKva = (tags.total_app ?? 0) * POWER_SCALE;
+    const powerKw = (tags.total_power ?? 0) * powerScale;
+    const powerKva = (tags.total_app ?? 0) * powerScale;
     const currR = tags.curr_l1 ?? tags.curr_a ?? 0;
     const currY = tags.curr_l2 ?? tags.curr_b ?? currR;
     const currB = tags.curr_l3 ?? tags.curr_c ?? currR;
@@ -227,6 +231,8 @@ async function storeDieselReading(
   plantId: string | null,
   flowRate: number,
   totalVolume: number | null,
+  deltaLiters: number,
+  runHours: number,
   timestamp: string | number | undefined,
   io: Server
 ): Promise<void> {
@@ -239,7 +245,6 @@ async function storeDieselReading(
 
   // Update daily summary
   const today = new Date(timestamp || Date.now()).toISOString().split('T')[0];
-  const dL = (flowRate || 0) * (5 / 3600);
 
   await pool.query(
     `INSERT INTO daily_diesel_summary (summary_date, plant_id, meter_id, total_liters, generator_run_hours)
@@ -248,7 +253,7 @@ async function storeDieselReading(
        total_liters = daily_diesel_summary.total_liters + EXCLUDED.total_liters,
        generator_run_hours = daily_diesel_summary.generator_run_hours + EXCLUDED.generator_run_hours,
        updated_at = NOW()`,
-    [today, plantId, meterId, dL, 5 / 3600]
+    [today, plantId, meterId, deltaLiters, runHours]
   );
 
   io.emit('live_reading', {
@@ -278,7 +283,8 @@ async function handleDieselReading(data: MeterData, io: Server): Promise<void> {
       plantId = rows[0].plant_id;
     }
 
-    await storeDieselReading(data.meter_id, plantId, data.flow_rate, data.total_volume ?? null, data.timestamp, io);
+    const dL = data.flow_rate * (5 / 3600); // Assuming 5-second intervals
+    await storeDieselReading(data.meter_id, plantId, data.flow_rate, data.total_volume ?? null, dL, 5 / 3600, data.timestamp, io);
     console.log(`[MQTT] Diesel reading stored: ${data.meter_id}`);
   } catch (err) {
     console.error('[MQTT] Error storing diesel reading:', (err as Error).message);
@@ -287,13 +293,16 @@ async function handleDieselReading(data: MeterData, io: Server): Promise<void> {
 
 // The flow meter gateway shares the same device_id/tags envelope as energy
 // meters instead of the explicit { type: 'diesel', meter_id, flow_rate }
-// shape - it has no cumulative total, only an instantaneous flow_l1 (L1
-// register) reading, so total_volume is left null here rather than guessed.
+// shape. flow_l1 is not an instantaneous rate - it's a cumulative totalizer
+// in cubic meters (confirmed against real traffic: it creeps up by
+// thousandths between consecutive messages, never fluctuates like a rate
+// would) - so the actual flow rate has to be derived from the delta against
+// the previous reading over the elapsed time, not read off directly.
 async function handleFlowTelemetry(data: DeviceTelemetry, io: Server): Promise<void> {
   try {
     const deviceId = data.device_id;
-    const flowRate = data.tags?.flow_l1;
-    if (!deviceId || typeof flowRate !== 'number') {
+    const volumeM3 = data.tags?.flow_l1;
+    if (!deviceId || typeof volumeM3 !== 'number') {
       console.error('[MQTT] Invalid flow telemetry:', data);
       return;
     }
@@ -308,8 +317,31 @@ async function handleFlowTelemetry(data: DeviceTelemetry, io: Server): Promise<v
     }
     const meterId: string = rows[0].meter_id;
     const plantId: string | null = rows[0].plant_id;
+    const volumeLiters = volumeM3 * 1000;
+    const now = new Date(data.timestamp || Date.now());
 
-    await storeDieselReading(meterId, plantId, flowRate, null, data.timestamp, io);
+    const { rows: [prev] } = await pool.query(
+      'SELECT total_volume, recorded_at FROM diesel_readings WHERE meter_id=$1 ORDER BY recorded_at DESC LIMIT 1',
+      [meterId]
+    );
+
+    let deltaLiters = 0;
+    let flowRate = 0;
+    let runHours = 0;
+    if (prev?.total_volume != null) {
+      const elapsedHours = Math.max((now.getTime() - new Date(prev.recorded_at).getTime()) / 3600000, 1 / 3600);
+      // A negative delta means the totalizer reset/rolled over on-device -
+      // treat that interval as zero consumption rather than a bogus refund,
+      // and let the next message re-establish the baseline.
+      deltaLiters = Math.max(0, volumeLiters - parseFloat(prev.total_volume));
+      flowRate = deltaLiters / elapsedHours;
+      // Run hours only count while fuel was actually being consumed - unlike
+      // the explicit diesel-type path's fixed per-message assumption, this
+      // path has a real consumption delta to gate on.
+      runHours = deltaLiters > 0 ? elapsedHours : 0;
+    }
+
+    await storeDieselReading(meterId, plantId, flowRate, volumeLiters, deltaLiters, runHours, data.timestamp, io);
     console.log(`[MQTT] Flow reading stored: ${meterId} (device ${deviceId})`);
   } catch (err) {
     console.error('[MQTT] Error storing flow reading:', (err as Error).message);

@@ -4,6 +4,24 @@ import { cacheWrap } from '../config/redis';
 import { getTimePeriod } from '../utils/timeUtils';
 import { AuthRequest } from '../types';
 
+// A plant section like "P1"/"P4" has one designated Main Incoming Energy
+// meter whose reading already covers everything downstream on the CEB side,
+// plus a GENERATOR meter for the generator side - summing every other
+// submeter in on top double-counts consumption the incomer already
+// captured. Sections/meters with no registered main incomer (e.g. the
+// standalone Canteen meters) have no such meter to defer to, so they're
+// kept as direct contributors. Only applies when aggregating a whole
+// plant/section (em required via a join aliased `em`); per-meter queries
+// should skip it so a specific submeter's own figures aren't zeroed out.
+const MAIN_METER_FILTER_SQL = `(
+  NOT EXISTS (
+    SELECT 1 FROM energy_meters em2
+    WHERE em2.plant_id = em.plant_id AND em2.plant_section = em.plant_section AND em2.plant_section IS NOT NULL
+      AND em2.name ILIKE '%main incoming%'
+  )
+  OR em.name ILIKE '%main incoming%' OR em.name ILIKE '%generator%'
+)`;
+
 export async function getLatestReading(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { plant_id } = req.query as { plant_id?: string };
   try {
@@ -143,6 +161,7 @@ export async function getDailySummary(req: AuthRequest, res: Response, next: Nex
              AND ($3::uuid IS NULL OR des.plant_id = $3)
              AND ($4::text IS NULL OR des.meter_id = $4)
              AND ($6::text IS NULL OR em.plant_section = $6)
+             AND ($4::text IS NOT NULL OR ${MAIN_METER_FILTER_SQL})
            GROUP BY des.summary_date, des.plant_id, p.name${meter_id ? ', des.meter_id' : ''}
            ORDER BY des.summary_date DESC LIMIT $5`,
           [from ?? null, to ?? null, plant_id ?? null, meter_id ?? null, Math.min(parseInt(limit), 730), plant_section ?? null]
@@ -199,6 +218,7 @@ export async function getMonthlySummary(req: AuthRequest, res: Response, next: N
              AND ($2::uuid IS NULL OR des.plant_id = $2)
              AND ($3::text IS NULL OR des.meter_id = $3)
              AND ($4::text IS NULL OR em.plant_section = $4)
+             AND ($3::text IS NOT NULL OR ${MAIN_METER_FILTER_SQL})
            GROUP BY DATE_TRUNC('month', summary_date), des.plant_id, p.name${meter_id ? ', des.meter_id' : ''}
            ORDER BY month`,
           [parseInt(year), plant_id ?? null, meter_id ?? null, plant_section ?? null]
@@ -244,6 +264,7 @@ export async function getYearlySummary(req: AuthRequest, res: Response, next: Ne
            LEFT JOIN energy_meters em ON em.meter_id = des.meter_id
            WHERE ($1::uuid IS NULL OR des.plant_id = $1)
              AND ($2::text IS NULL OR em.plant_section = $2)
+             AND ${MAIN_METER_FILTER_SQL}
            GROUP BY EXTRACT(YEAR FROM summary_date), des.plant_id, p.name
            ORDER BY year DESC LIMIT 10`,
           [plant_id ?? null, plant_section ?? null]
@@ -302,7 +323,8 @@ export async function getDashboardStats(req: AuthRequest, res: Response, next: N
            LEFT JOIN energy_meters em ON em.meter_id = des.meter_id
            WHERE des.summary_date = $1
              AND ($2::uuid IS NULL OR des.plant_id = $2)
-             AND ($3::text IS NULL OR em.plant_section = $3)`,
+             AND ($3::text IS NULL OR em.plant_section = $3)
+             AND ${MAIN_METER_FILTER_SQL}`,
           [today, plant_id ?? null, plant_section ?? null]
         ),
         pool.query(
