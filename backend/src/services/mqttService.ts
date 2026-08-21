@@ -96,6 +96,10 @@ interface DeviceTelemetry {
 // the gateway already reports kW/kVA directly, to skip the /1000 conversion.
 const POWER_SCALE = process.env.MQTT_POWER_UNIT === 'kw' ? 1 : 0.001;
 
+// Generous headroom over any realistic generator's diesel burn rate at this
+// plant, used to reject implausible flow-rate glitches (see handleFlowTelemetry).
+const MAX_PLAUSIBLE_FLOW_RATE = 1000;
+
 async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<void> {
   try {
     const deviceId = data.device_id;
@@ -335,10 +339,23 @@ async function handleFlowTelemetry(data: DeviceTelemetry, io: Server): Promise<v
       // and let the next message re-establish the baseline.
       deltaLiters = Math.max(0, volumeLiters - parseFloat(prev.total_volume));
       flowRate = deltaLiters / elapsedHours;
-      // Run hours only count while fuel was actually being consumed - unlike
-      // the explicit diesel-type path's fixed per-message assumption, this
-      // path has a real consumption delta to gate on.
-      runHours = deltaLiters > 0 ? elapsedHours : 0;
+      // A comms/decode glitch on the raw totalizer (seen in real traffic:
+      // isolated readings of 0 or wildly larger than neighbors) produces an
+      // implausible rate - no generator this size burns anywhere near
+      // MAX_PLAUSIBLE_FLOW_RATE L/hr. Don't let one bad tick inflate the
+      // daily total or Diesel Consumption chart; still record the raw
+      // counter value as this reading's total_volume so it becomes the
+      // baseline the next (hopefully sane) delta is measured against.
+      if (flowRate > MAX_PLAUSIBLE_FLOW_RATE) {
+        console.error(`[MQTT] Implausible flow rate ignored: ${meterId} ${flowRate.toFixed(1)} L/hr (device ${deviceId})`);
+        deltaLiters = 0;
+        flowRate = 0;
+      } else {
+        // Run hours only count while fuel was actually being consumed -
+        // unlike the explicit diesel-type path's fixed per-message
+        // assumption, this path has a real consumption delta to gate on.
+        runHours = deltaLiters > 0 ? elapsedHours : 0;
+      }
     }
 
     await storeDieselReading(meterId, plantId, flowRate, volumeLiters, deltaLiters, runHours, data.timestamp, io);

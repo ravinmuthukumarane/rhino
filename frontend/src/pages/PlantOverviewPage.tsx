@@ -217,10 +217,6 @@ export default function PlantOverviewPage() {
         {reading ? (
           <div className="space-y-2 text-xs">
             <div className="flex justify-between">
-              <span className="text-gray-600 dark:text-gray-400">Flow Rate</span>
-              <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.flow_rate != null ? numFmt(reading.flow_rate, 2) : '—'} L/hr</span>
-            </div>
-            <div className="flex justify-between">
               <span className="text-gray-600 dark:text-gray-400">Total Volume</span>
               <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.total_volume != null ? numFmt(reading.total_volume, 2) : '—'} L</span>
             </div>
