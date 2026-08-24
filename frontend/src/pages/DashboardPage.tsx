@@ -104,8 +104,6 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
   const energySource = energyReadings && energyReadings.length > 0 ? energyReadings : meterReadings;
   const energyValues = energySource.map((r) => r.energy).filter((x): x is EnergyReading => x != null);
   const e = aggregateEnergyReadings(energyValues);
-  const d = meterReadings.filter((r) => r.diesel != null)
-    .sort((a, b) => new Date(b.diesel!.recorded_at).getTime() - new Date(a.diesel!.recorded_at).getTime())[0]?.diesel;
   const tp: TimePeriod = meterReadings[0]?.timePeriod ?? getTimePeriod();
 
   const prevRef = { current: liveHistory };
@@ -201,7 +199,6 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
           <MetricCard label="Apparent Power" value={e ? numFmt(e.power_kva, 2) : null} unit="kVA" color="purple" />
           <MetricCard label="Frequency" value={e ? parseFloat(String(e.frequency)).toFixed(2) : null} unit="Hz" color="primary" />
           <MetricCard label="Time Period" value={timePeriodLabels[tp]} color="primary" />
-          <MetricCard label="Flow Rate" value={d ? numFmt(d.flow_rate, 2) : '0.00'} unit="L/hr" color="orange" sub={`Total: ${fmt.lit(d?.total_volume)}`} />
         </div>
       </div>
     </div>
