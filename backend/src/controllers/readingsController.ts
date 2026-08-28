@@ -1,7 +1,7 @@
 import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { cacheWrap } from '../config/redis';
-import { getTimePeriod } from '../utils/timeUtils';
+import { getTimePeriod, getISTDateString } from '../utils/timeUtils';
 import { AuthRequest } from '../types';
 
 // A plant section like "P1"/"P4" has one designated Main Incoming Energy
@@ -308,7 +308,7 @@ export async function getPowerInterruptions(req: AuthRequest, res: Response, nex
 
 export async function getDashboardStats(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { plant_id, plant_section } = req.query as { plant_id?: string; plant_section?: string };
-  const today = new Date().toISOString().split('T')[0];
+  const today = getISTDateString();
   try {
     const cacheKey = `dashboard-stats:${today}:${plant_id ?? ''}:${plant_section ?? ''}`;
     const result = await cacheWrap(cacheKey, 15, async () => {
@@ -348,7 +348,7 @@ export async function getDashboardStats(req: AuthRequest, res: Response, next: N
         pool.query(
           `SELECT COUNT(*) FROM power_interruptions pi
            LEFT JOIN energy_meters em ON em.meter_id = pi.meter_id
-           WHERE pi.started_at::date = $1
+           WHERE (pi.started_at AT TIME ZONE 'Asia/Colombo')::date = $1
              AND ($2::uuid IS NULL OR pi.plant_id = $2)
              AND ($3::text IS NULL OR em.plant_section = $3)`,
           [today, plant_id ?? null, plant_section ?? null]

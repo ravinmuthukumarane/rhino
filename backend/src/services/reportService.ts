@@ -2,6 +2,7 @@ import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import pool from '../config/database';
 import { GenerateReportInput } from '../types';
+import { formatISTDate, formatISTDateTime, getISTDateString } from '../utils/timeUtils';
 
 const HFILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
 const HFONT: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true };
@@ -11,9 +12,19 @@ function hdr(sheet: ExcelJS.Worksheet, cols: string[]): void {
   row.eachCell((cell) => { cell.fill = HFILL; cell.font = HFONT; cell.alignment = { horizontal: 'center' }; });
 }
 
-function fmtDate(d: any): string { return d ? new Date(d).toLocaleDateString() : ''; }
-function fmtTime(d: any): string { return d ? new Date(d).toLocaleString() : ''; }
+// The report server runs on UTC system time, so plain toLocaleDateString()/
+// toLocaleString() would print UTC clock time in a report meant to be read
+// against Sri Lanka's day/peak/off-peak schedule - explicitly anchor to IST.
+function fmtDate(d: any): string { return d ? formatISTDate(d, { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''; }
+function fmtTime(d: any): string { return d ? formatISTDateTime(d) : ''; }
 function n(v: any, dp = 2): string { return v != null ? parseFloat(v).toFixed(dp) : '0.00'; }
+
+// `start`/`end` are plain dates (e.g. "2026-08-01") picked against Sri
+// Lanka's calendar. Anchoring explicitly to +05:30 (Sri Lanka has no DST)
+// gives the correct UTC instant for IST midnight regardless of server
+// timezone, instead of `new Date(dateStr)` which parses as UTC midnight.
+const startOfDayIST = (dateStr: string): Date => new Date(`${dateStr}T00:00:00+05:30`);
+const endOfDayExclusiveIST = (dateStr: string): Date => new Date(startOfDayIST(dateStr).getTime() + 86400000);
 
 async function buildEnergyDaily(start: string, end: string, plantId?: string, meterId?: string): Promise<ExcelJS.Workbook> {
   const { rows } = await pool.query(
@@ -48,7 +59,7 @@ async function buildEnergyMonthly(start: string, end: string, plantId?: string):
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Monthly Energy');
   hdr(ws, ['Month','Plant','Meter','Total kWh','Max kVA','Avg PF','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']);
-  rows.forEach((r) => ws.addRow([new Date(r.month).toLocaleDateString('en-GB',{year:'numeric',month:'long'}),r.plant_name,r.meter_id,r.total_kwh,r.max_kva,r.avg_pf,r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
+  rows.forEach((r) => ws.addRow([formatISTDate(r.month,{year:'numeric',month:'long'}),r.plant_name,r.meter_id,r.total_kwh,r.max_kva,r.avg_pf,r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
   return wb;
 }
 
@@ -69,10 +80,10 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
             er.current_r, er.current_y, er.current_b, er.power_kw, er.power_kva, er.power_factor,
             er.frequency, er.source
      FROM energy_readings er LEFT JOIN plants p ON p.id=er.plant_id
-     WHERE er.recorded_at BETWEEN $1 AND $2
+     WHERE er.recorded_at >= $1 AND er.recorded_at < $2
        AND ($3::uuid IS NULL OR er.plant_id=$3) AND ($4::text IS NULL OR er.meter_id=$4)
      ORDER BY er.recorded_at LIMIT 50000`,
-    [new Date(start), new Date(end), plantId??null, meterId??null]
+    [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, meterId??null]
   );
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Power Quality');
@@ -84,8 +95,8 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
 async function buildInterruptions(start: string, end: string, plantId?: string): Promise<ExcelJS.Workbook> {
   const { rows } = await pool.query(
     `SELECT pi.*, p.name AS plant_name FROM power_interruptions pi LEFT JOIN plants p ON p.id=pi.plant_id
-     WHERE pi.started_at BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR pi.plant_id=$3) ORDER BY pi.started_at`,
-    [new Date(start), new Date(end), plantId??null]
+     WHERE pi.started_at >= $1 AND pi.started_at < $2 AND ($3::uuid IS NULL OR pi.plant_id=$3) ORDER BY pi.started_at`,
+    [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null]
   );
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Interruptions');
@@ -106,8 +117,8 @@ async function buildConsumptionSummary(start: string, end: string, plantId?: str
 }
 
 async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
-  const start = input.periodStart ?? new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-  const end = input.periodEnd ?? new Date().toISOString().split('T')[0];
+  const start = input.periodStart ?? getISTDateString(new Date(Date.now() - 30 * 86400000));
+  const end = input.periodEnd ?? getISTDateString();
   const tag = `${start}_to_${end}`;
 
   let wb: ExcelJS.Workbook;
@@ -140,7 +151,7 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
     doc.on('error', reject);
     doc.fontSize(16).fillColor('#1e40af').text('Energy Monitoring System', { align: 'center' });
     doc.fontSize(12).fillColor('#374151').text(`Report: ${type.replace(/_/g,' ')}`, { align: 'center' });
-    doc.fontSize(10).fillColor('#6b7280').text(`Period: ${start} — ${end}  |  Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+    doc.fontSize(10).fillColor('#6b7280').text(`Period: ${start} — ${end}  |  Generated: ${formatISTDateTime(new Date())} IST`, { align: 'center' });
     doc.moveDown();
     const sheet = wb.getWorksheet(1);
     if (sheet) {

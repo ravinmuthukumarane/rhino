@@ -1,6 +1,7 @@
 import transporter from '../config/email';
 import { Alert } from '../types';
 import { SectionSummary } from './plantSectionSummaryService';
+import { formatISTDateTime } from '../utils/timeUtils';
 
 const FROM = process.env.EMAIL_FROM ?? 'Energy Monitor <noreply@example.com>';
 const UI = process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -93,7 +94,7 @@ async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;">
       ${row('Value', alert.value ?? 'N/A')}
       ${row('Setpoint', alert.setpoint_value ?? 'N/A')}
-      ${row('Time', new Date().toLocaleString())}
+      ${row('Time', `${formatISTDateTime(new Date())} IST`)}
     </table>
     ${button('View Alerts', `${UI}/alerts`)}`, color));
 }

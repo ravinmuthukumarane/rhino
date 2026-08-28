@@ -2,13 +2,18 @@ import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
 
-// `to` arrives as a plain date (e.g. "2026-08-12") and every query here uses
-// an exclusive upper bound (`recorded_at < to`) - without this, that
-// compares against midnight at the *start* of the selected day and silently
-// drops the entire "to" day from the report. Pure UTC arithmetic (the input
-// date-only string already parses as UTC midnight) avoids local-timezone
-// rollover surprises.
-const endOfDayExclusive = (dateStr: string): string => new Date(new Date(dateStr).getTime() + 86400000).toISOString();
+// `from`/`to` arrive as plain dates (e.g. "2026-08-12") picked against Sri
+// Lanka's calendar - the server runs on UTC system time, so parsing them as
+// bare UTC midnight (the old approach) shifts every report window by 5.5
+// hours off the IST day the user actually selected. Anchoring explicitly to
+// the +05:30 offset (Sri Lanka has no DST) gives the correct UTC instant for
+// IST midnight regardless of server timezone.
+const startOfDayIST = (dateStr: string): string => new Date(`${dateStr}T00:00:00+05:30`).toISOString();
+
+// Every query here uses an exclusive upper bound (`recorded_at < to`) -
+// without this, that compares against midnight at the *start* of the
+// selected day and silently drops the entire "to" day from the report.
+const endOfDayExclusive = (dateStr: string): string => new Date(new Date(`${dateStr}T00:00:00+05:30`).getTime() + 86400000).toISOString();
 
 // Reading -> kWh: power_kw * (reading interval in hours). Readings land every
 // 5 seconds, so the interval is 5/3600 hours - written as 5.0/3600 because
@@ -47,7 +52,7 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          AND er.recorded_at < $3::timestamptz
        GROUP BY em.meter_id, em.name, er.time_period
        ORDER BY em.meter_id, er.time_period`,
-      [plant_id, from, endOfDayExclusive(String(to))]
+      [plant_id, startOfDayIST(String(from)), endOfDayExclusive(String(to))]
     );
 
     // time_period in the DB is 'day'/'peak'/'off_peak' - the API/frontend
@@ -117,12 +122,15 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
   if (!from || !to) { res.status(400).json({ error: 'from and to dates required' }); return; }
 
   try {
+    const fromInclusive = startOfDayIST(String(from));
     const toExclusive = endOfDayExclusive(String(to));
 
-    // Daily breakdown
+    // Daily breakdown - bucketed by Sri Lanka calendar day, not the server's
+    // UTC system day, so readings between 00:00–05:30 IST land on the
+    // correct date instead of the previous one.
     const { rows: dailyData } = await pool.query(
       `SELECT
-         DATE(er.recorded_at) as record_date,
+         (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
          er.meter_id,
          er.source,
          SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh
@@ -130,22 +138,22 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
        WHERE er.plant_id = $1
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
-       GROUP BY DATE(er.recorded_at), er.meter_id, er.source
+       GROUP BY (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date, er.meter_id, er.source
        ORDER BY record_date DESC, er.meter_id`,
-      [plant_id, from, toExclusive]
+      [plant_id, fromInclusive, toExclusive]
     );
 
     // Power interruptions (switchovers)
     const { rows: interruptions } = await pool.query(
       `SELECT
-         DATE(started_at) as switchover_date,
+         (started_at AT TIME ZONE 'Asia/Colombo')::date as switchover_date,
          COUNT(*) as switchover_count
        FROM power_interruptions
        WHERE plant_id = $1
          AND started_at >= $2::timestamptz
          AND started_at < $3::timestamptz
-       GROUP BY DATE(started_at)`,
-      [plant_id, from, toExclusive]
+       GROUP BY (started_at AT TIME ZONE 'Asia/Colombo')::date`,
+      [plant_id, fromInclusive, toExclusive]
     );
 
     // Aggregate daily
@@ -212,7 +220,7 @@ export async function getDeviceComparison(req: AuthRequest, res: Response, next:
       `SELECT
          em.meter_id,
          em.name,
-         DATE(er.recorded_at) as record_date,
+         (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
          SUM(er.power_kw * ${KWH_FACTOR_SQL}) as total_kwh,
          AVG(er.power_factor) as avg_pf,
          MAX(er.power_kva) as max_kva,
@@ -222,9 +230,9 @@ export async function getDeviceComparison(req: AuthRequest, res: Response, next:
        WHERE er.meter_id = ANY($1::text[])
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
-       GROUP BY em.meter_id, em.name, DATE(er.recorded_at)
+       GROUP BY em.meter_id, em.name, (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date
        ORDER BY em.meter_id, record_date DESC`,
-      [meterArray, from, endOfDayExclusive(String(to))]
+      [meterArray, startOfDayIST(String(from)), endOfDayExclusive(String(to))]
     );
 
     res.json({
@@ -245,7 +253,7 @@ export async function getConsumptionTrend(req: AuthRequest, res: Response, next:
 
     let query = `
       SELECT
-        DATE(er.recorded_at) as record_date,
+        (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
         em.meter_id,
         em.name,
         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as daily_kwh,
@@ -267,7 +275,7 @@ export async function getConsumptionTrend(req: AuthRequest, res: Response, next:
       params.push(meter_id);
     }
 
-    query += ` GROUP BY DATE(er.recorded_at), em.meter_id, em.name
+    query += ` GROUP BY (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date, em.meter_id, em.name
       ORDER BY record_date DESC, em.meter_id`;
 
     const { rows } = await pool.query(query, params);

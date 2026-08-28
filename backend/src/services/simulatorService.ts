@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import pool from '../config/database';
 import { checkAndAlert, checkPowerSwitch } from './alertService';
-import { getTimePeriod } from '../utils/timeUtils';
+import { getTimePeriod, getISTDateString } from '../utils/timeUtils';
 import { PowerSource, TimePeriod } from '../types';
 
 const rand = (min: number, max: number) => Math.random() * (max - min) + min;
@@ -128,7 +128,7 @@ async function tick(state: SimState, io: Server): Promise<void> {
   state.prevSource = source;
 
   // Daily summaries (incremental)
-  const today = new Date().toISOString().split('T')[0];
+  const today = getISTDateString();
   const dKwh = kw * interval;
   const cebKwh = source === 'CEB' ? dKwh : 0;
   const genKwh = source === 'GENERATOR' ? dKwh : 0;

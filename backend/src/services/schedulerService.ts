@@ -3,6 +3,7 @@ import pool from '../config/database';
 import { reportService } from './reportService';
 import { emailService } from './emailService';
 import { plantSectionSummaryService } from './plantSectionSummaryService';
+import { getISTDateString, getISTParts, formatISTDate } from '../utils/timeUtils';
 
 const REPORT_LABELS: Record<string, string> = {
   energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
@@ -18,13 +19,15 @@ async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void>
   const now = new Date();
   let start: string, end: string, periodLabel: string;
   if (frequency === 'daily') {
-    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1);
-    start = end = yesterday.toISOString().split('T')[0];
-    periodLabel = new Date(start).toLocaleDateString('en-GB', { year: 'numeric', month: 'long', day: 'numeric' });
+    // "Yesterday" in Sri Lanka's calendar, not the server's UTC system day.
+    start = end = getISTDateString(new Date(now.getTime() - 86400000));
+    periodLabel = formatISTDate(`${start}T00:00:00+05:30`, { year: 'numeric', month: 'long', day: 'numeric' });
   } else {
-    start = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().split('T')[0];
-    end = new Date(now.getFullYear(), now.getMonth(), 0).toISOString().split('T')[0];
-    periodLabel = new Date(start).toLocaleDateString('en-GB', { year: 'numeric', month: 'long' });
+    // Last calendar month anchored to the IST year/month, not server UTC.
+    const { year, month } = getISTParts(now); // month is 1-indexed
+    start = new Date(Date.UTC(year, month - 2, 1)).toISOString().split('T')[0];
+    end = new Date(Date.UTC(year, month - 1, 0)).toISOString().split('T')[0];
+    periodLabel = formatISTDate(`${start}T00:00:00+05:30`, { year: 'numeric', month: 'long' });
   }
 
   console.log(`[Scheduler] Generating ${frequency} report (${sched.report_type}, ${sched.format})…`);
@@ -61,12 +64,13 @@ export function startScheduler(): void {
 
   // Daily summary recalc at 00:05
   cron.schedule('5 0 * * *', async () => {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const date = yesterday.toISOString().split('T')[0];
+    const date = getISTDateString(new Date(Date.now() - 86400000));
     console.log(`[Scheduler] Recalculating daily summary for ${date}…`);
     try {
-      const { rows: meters } = await pool.query('SELECT DISTINCT meter_id, plant_id FROM energy_readings WHERE recorded_at::date = $1', [date]);
+      const { rows: meters } = await pool.query(
+        "SELECT DISTINCT meter_id, plant_id FROM energy_readings WHERE (recorded_at AT TIME ZONE 'Asia/Colombo')::date = $1",
+        [date]
+      );
       for (const { meter_id, plant_id } of meters) {
         const { rows: [r] } = await pool.query(
           `SELECT SUM(power_kw*(5.0/3600)) AS total_kwh, MAX(power_kva) AS max_kva,
@@ -77,7 +81,7 @@ export function startScheduler(): void {
                   SUM(CASE WHEN time_period='day' THEN power_kw*(5.0/3600) ELSE 0 END) AS day_kwh,
                   SUM(CASE WHEN time_period='peak' THEN power_kw*(5.0/3600) ELSE 0 END) AS peak_kwh,
                   SUM(CASE WHEN time_period='off_peak' THEN power_kw*(5.0/3600) ELSE 0 END) AS off_kwh
-           FROM energy_readings WHERE recorded_at::date=$1 AND meter_id=$2`, [date, meter_id]
+           FROM energy_readings WHERE (recorded_at AT TIME ZONE 'Asia/Colombo')::date=$1 AND meter_id=$2`, [date, meter_id]
         );
         if (r.total_kwh != null) {
           await pool.query(

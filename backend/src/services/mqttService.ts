@@ -1,7 +1,7 @@
 import mqtt, { MqttClient } from 'mqtt';
 import pool from '../config/database';
 import { checkAndAlert, checkPowerSwitch } from './alertService';
-import { getTimePeriod } from '../utils/timeUtils';
+import { getTimePeriod, getISTDateString } from '../utils/timeUtils';
 import { EnergyReading, PowerSource, GeneratorStatus } from '../types';
 import { Server } from 'socket.io';
 
@@ -170,7 +170,7 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     );
 
     // Update daily summary
-    const today = new Date(data.timestamp || Date.now()).toISOString().split('T')[0];
+    const today = getISTDateString(new Date(data.timestamp || Date.now()));
     const dKwh = powerKw * (5 / 3600); // Assuming 5-second intervals
     const cebKwh = source === 'CEB' ? dKwh : 0;
     const genKwh = source === 'GENERATOR' ? dKwh : 0;
@@ -248,7 +248,7 @@ async function storeDieselReading(
   );
 
   // Update daily summary
-  const today = new Date(timestamp || Date.now()).toISOString().split('T')[0];
+  const today = getISTDateString(new Date(timestamp || Date.now()));
 
   await pool.query(
     `INSERT INTO daily_diesel_summary (summary_date, plant_id, meter_id, total_liters, generator_run_hours)

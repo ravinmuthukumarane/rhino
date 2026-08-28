@@ -6,13 +6,20 @@ DO $$ BEGIN
 END $$;
 DELETE FROM alert_setpoints WHERE alert_type = 'high_third_harmonic';
 
+-- Threshold-based alerts (over/low voltage, low PF, high kVA) are switched
+-- off for now - toggle back on anytime from Settings > Alert Setpoints.
+-- power_interruption is left enabled: it's a CEB/Generator switch event,
+-- not a threshold check.
+UPDATE alert_setpoints SET enabled = false, updated_at = NOW()
+WHERE alert_type IN ('over_voltage', 'low_voltage', 'low_power_factor', 'high_kva');
+
 -- Default alert setpoints
 INSERT INTO alert_setpoints (alert_type, label, unit, min_value, max_value, enabled, email_notify)
 VALUES
-  ('over_voltage',        'Over Voltage',         'V',    NULL,  255.0, true, true),
-  ('low_voltage',         'Low Voltage',          'V',    195.0, NULL,  true, true),
-  ('low_power_factor',    'Low Power Factor',     NULL,   0.85,  NULL,  true, true),
-  ('high_kva',            'High KVA Demand',      'kVA',  NULL,  100.0, true, true),
+  ('over_voltage',        'Over Voltage',         'V',    NULL,  255.0, false, true),
+  ('low_voltage',         'Low Voltage',          'V',    195.0, NULL,  false, true),
+  ('low_power_factor',    'Low Power Factor',     NULL,   0.85,  NULL,  false, true),
+  ('high_kva',            'High KVA Demand',      'kVA',  NULL,  100.0, false, true),
   ('power_interruption',  'Power Interruption',   NULL,   NULL,  NULL,  true, true)
 ON CONFLICT (alert_type) DO NOTHING;
 
