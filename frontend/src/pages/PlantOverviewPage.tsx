@@ -93,15 +93,11 @@ export default function PlantOverviewPage() {
     staleTime: 15000,
   });
 
-  // No per-reading severity field on EnergyReading - derive from power
-  // factor using the same thresholds as the Dashboard's live PF indicator.
-  const getSeverity = (reading: any): 'critical' | 'warning' | 'normal' => {
-    const pf = reading?.power_factor != null ? parseFloat(String(reading.power_factor)) : null;
-    if (pf == null) return 'normal';
-    if (pf < 0.80) return 'critical';
-    if (pf < 0.85) return 'warning';
-    return 'normal';
-  };
+  // CRITICAL/WARNING badges disabled for now - this ran independently of
+  // alert_setpoints.enabled (which only gates the backend alert pipeline),
+  // so disabling alerts there never touched this card's badge. Was PF < 0.80
+  // -> critical, PF < 0.85 -> warning; restore those thresholds to re-enable.
+  const getSeverity = (_reading: any): 'critical' | 'warning' | 'normal' => 'normal';
 
   const getStatusColor = (reading: any) => {
     if (!reading) return 'bg-gray-200 dark:bg-gray-700 border-gray-400 dark:border-gray-600';
