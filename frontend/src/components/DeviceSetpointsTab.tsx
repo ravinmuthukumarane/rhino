@@ -24,6 +24,18 @@ export default function DeviceSetpointsTab() {
     queryKey: ['energy-meters'],
     queryFn: () => settingsApi.getEnergyMeters().then(r => r.data),
   });
+  const meterName = (meterId: string) => {
+    const m = meters?.meters?.find((x: any) => x.meter_id === meterId);
+    return m ? `${m.name} (${m.meter_id})` : meterId;
+  };
+  const alertLabel = (type: string) => ALERT_TYPES.find((t) => t.value === type)?.label ?? type.replace(/_/g, ' ');
+
+  // Every device override across every meter, so overrides are visible
+  // without having to select each meter one at a time to find them.
+  const { data: allSetpoints } = useQuery({
+    queryKey: ['device-setpoints-all'],
+    queryFn: () => deviceSetpointsApi.getAll().then(r => r.data),
+  });
 
   const { data: setpoints } = useQuery({
     queryKey: ['device-setpoints', selectedMeter],
@@ -31,10 +43,15 @@ export default function DeviceSetpointsTab() {
     enabled: !!selectedMeter,
   });
 
+  const invalidateSetpoints = () => {
+    qc.invalidateQueries({ queryKey: ['device-setpoints'] });
+    qc.invalidateQueries({ queryKey: ['device-setpoints-all'] });
+  };
+
   const updateMutation = useMutation({
     mutationFn: ({ id, ...data }: any) => deviceSetpointsApi.update(id, data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['device-setpoints'] });
+      invalidateSetpoints();
       setEditingId(null);
       toast.success('Setpoint updated');
     },
@@ -44,7 +61,7 @@ export default function DeviceSetpointsTab() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deviceSetpointsApi.delete(id),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['device-setpoints'] });
+      invalidateSetpoints();
       toast.success('Setpoint deleted');
     },
     onError: () => toast.error('Failed to delete'),
@@ -56,8 +73,10 @@ export default function DeviceSetpointsTab() {
   const createMutation = useMutation({
     mutationFn: (data: any) => deviceSetpointsApi.create(data),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['device-setpoints'] });
-      setShowAddForm(false);
+      invalidateSetpoints();
+      // Stay open so several parameters can be added for the same meter
+      // back to back - only the value fields reset; the next available
+      // parameter is auto-selected below once the list refetches.
       setNewSp({ alert_type: '', min_value: '', max_value: '', enabled: true, email_notify: true });
       toast.success('Setpoint created');
     },
@@ -65,8 +84,9 @@ export default function DeviceSetpointsTab() {
   });
 
   useEffect(() => {
-    if (showAddForm && !newSp.alert_type && availableTypes.length > 0) {
-      setNewSp((v) => ({ ...v, alert_type: availableTypes[0].value }));
+    if (showAddForm && !newSp.alert_type) {
+      if (availableTypes.length > 0) setNewSp((v) => ({ ...v, alert_type: availableTypes[0].value }));
+      else setShowAddForm(false); // every parameter for this meter is now configured
     }
   }, [showAddForm, availableTypes, newSp.alert_type]);
 
@@ -95,8 +115,82 @@ export default function DeviceSetpointsTab() {
 
   const newSpMeta = ALERT_TYPES.find((t) => t.value === newSp.alert_type);
 
+  const allRows: any[] = allSetpoints?.setpoints ?? [];
+
   return (
     <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-1">All Device Overrides ({allRows.length})</p>
+        {allRows.length === 0 ? (
+          <p className="text-sm text-gray-500">No device-specific overrides configured yet - select a meter below to add one.</p>
+        ) : (
+          <div className="overflow-hidden border border-gray-200 dark:border-gray-800 rounded-lg">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Meter</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Parameter</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Min Value</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Max Value</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Enabled</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Email</th>
+                  <th className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allRows.map((sp: any) => (
+                  <tr key={sp.id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
+                    <td className="px-4 py-3 text-gray-800 dark:text-gray-200 text-xs">{meterName(sp.meter_id)}</td>
+                    <td className="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{alertLabel(sp.alert_type)}</td>
+                    <td className="px-4 py-3">
+                      {editingId === sp.id ? (
+                        <input type="number" step="any" className="input py-1 text-xs w-24"
+                          value={editValues[sp.id]?.min_value ?? sp.min_value ?? ''}
+                          onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], min_value: e.target.value } })} />
+                      ) : <span className="text-gray-600 dark:text-gray-400">{sp.min_value ?? '—'}</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingId === sp.id ? (
+                        <input type="number" step="any" className="input py-1 text-xs w-24"
+                          value={editValues[sp.id]?.max_value ?? sp.max_value ?? ''}
+                          onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], max_value: e.target.value } })} />
+                      ) : <span className="text-gray-600 dark:text-gray-400">{sp.max_value ?? '—'}</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingId === sp.id ? (
+                        <input type="checkbox" checked={editValues[sp.id]?.enabled ?? sp.enabled}
+                          onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], enabled: e.target.checked } })} className="w-4 h-4" />
+                      ) : <input type="checkbox" checked={sp.enabled} disabled className="w-4 h-4" />}
+                    </td>
+                    <td className="px-4 py-3">
+                      {editingId === sp.id ? (
+                        <input type="checkbox" checked={editValues[sp.id]?.email_notify ?? sp.email_notify}
+                          onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], email_notify: e.target.checked } })} className="w-4 h-4" />
+                      ) : <input type="checkbox" checked={sp.email_notify} disabled className="w-4 h-4" />}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      <div className="flex gap-2">
+                        {editingId === sp.id ? (
+                          <>
+                            <button onClick={() => handleSave(sp)} className="text-green-600 dark:text-green-400 hover:underline text-xs font-medium">Save</button>
+                            <button onClick={() => setEditingId(null)} className="text-gray-500 hover:underline text-xs">Cancel</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => setEditingId(sp.id)} className="text-blue-600 dark:text-blue-400 hover:underline text-xs">Edit</button>
+                            <button onClick={() => deleteMutation.mutate(sp.id)} className="text-red-600 dark:text-red-400 hover:underline text-xs"><Trash2 className="w-3 h-3" /></button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div>
         <label className="label">Select Energy Meter</label>
         <select value={selectedMeter} onChange={e => setSelectedMeter(e.target.value)} className="input text-sm">
@@ -153,18 +247,21 @@ export default function DeviceSetpointsTab() {
                   <input type="checkbox" checked={newSp.email_notify} onChange={e => setNewSp({ ...newSp, email_notify: e.target.checked })} className="w-4 h-4" /> Email alert
                 </label>
               </div>
-              <div className="flex gap-2">
-                <button onClick={handleCreate} disabled={createMutation.isPending} className="btn-primary text-sm py-1.5 px-4">
+              <div className="flex items-center gap-2">
+                <button onClick={handleCreate} disabled={createMutation.isPending || !newSp.alert_type} className="btn-primary text-sm py-1.5 px-4">
                   {createMutation.isPending ? 'Creating…' : 'Create'}
                 </button>
                 <button onClick={() => { setShowAddForm(false); setNewSp({ alert_type: '', min_value: '', max_value: '', enabled: true, email_notify: true }); }} className="btn-secondary text-sm py-1.5 px-4">
-                  Cancel
+                  Done
                 </button>
+                <span className="text-xs text-gray-500">Create adds this parameter and keeps the form open for the next one.</span>
               </div>
             </div>
           )}
 
           {setpoints?.setpoints && (
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500">Every parameter for this meter - 🌍 Global rows are just showing the current fallback value, not a saved override.</p>
             <div className="overflow-hidden border border-gray-200 dark:border-gray-800 rounded-lg">
               <table className="w-full text-sm">
                 <thead>
@@ -288,6 +385,7 @@ export default function DeviceSetpointsTab() {
                   ))}
                 </tbody>
               </table>
+            </div>
             </div>
           )}
 

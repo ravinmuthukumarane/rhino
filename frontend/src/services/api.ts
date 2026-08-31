@@ -56,6 +56,7 @@ export const alertsApi = {
 };
 
 export const deviceSetpointsApi = {
+  getAll: () => api.get('/device-setpoints'),
   getEffective: (meterId: string) => api.get('/device-setpoints/effective', { params: { meter_id: meterId } }),
   create: (data: object) => api.post('/device-setpoints', data),
   update: (id: string, data: object) => api.put(`/device-setpoints/${id}`, data),
