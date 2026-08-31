@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Activity, Zap, Gauge, BarChart2, Droplets, Cpu, TrendingUp } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
@@ -93,11 +93,41 @@ function buildDieselChartData(period: ConsumPeriod, dailyData: any, monthlyData:
 // can be compared side by side instead of being merged into one plant-wide view.
 // The section heading itself is rendered by the caller, above the rest of
 // that section's block (stats row, source indicator, this, consumption charts).
-function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section }: {
-  meterReadings: LiveReadingPayload[]; energyReadings?: LiveReadingPayload[]; selectedPlantId?: string | null; section?: string;
+function toLivePoint(e: EnergyReading): any {
+  return {
+    ts: e.recorded_at,
+    time: format(new Date(e.recorded_at), 'HH:mm:ss'),
+    VR: +parseFloat(String(e.voltage_r)).toFixed(1),
+    VY: +parseFloat(String(e.voltage_y)).toFixed(1),
+    VB: +parseFloat(String(e.voltage_b)).toFixed(1),
+    IR: +parseFloat(String(e.current_r)).toFixed(1),
+    IY: +parseFloat(String(e.current_y)).toFixed(1),
+    IB: +parseFloat(String(e.current_b)).toFixed(1),
+    'kW': +parseFloat(String(e.power_kw)).toFixed(2),
+    'kVA': +parseFloat(String(e.power_kva)).toFixed(2),
+    PF: +parseFloat(String(e.power_factor)).toFixed(3),
+  };
+}
+
+function SectionColumn({ meterReadings, energyReadings, historyMeterId, selectedPlantId, section }: {
+  meterReadings: LiveReadingPayload[]; energyReadings?: LiveReadingPayload[]; historyMeterId?: string; selectedPlantId?: string | null; section?: string;
 }) {
   const [liveHistory, setLiveHistory] = useState<any[]>([]);
   const [liveMetric, setLiveMetric] = useState<'voltage'|'current'|'power'|'pf'>('power');
+
+  // Seed the chart from recent history on mount/meter-change instead of
+  // starting empty and waiting for MAX_LIVE live_reading events (~5s apart,
+  // so minutes) to trickle in one at a time after every refresh/login.
+  const { data: historyData } = useQuery({
+    queryKey: ['live-trend-history', historyMeterId],
+    queryFn: () => readingsApi.getEnergyHistory({ meter_id: historyMeterId, limit: MAX_LIVE }).then((r) => r.data),
+    enabled: !!historyMeterId,
+    staleTime: 60000,
+  });
+  useEffect(() => {
+    if (!historyData?.readings) return;
+    setLiveHistory((prev) => (prev.length > 0 ? prev : historyData.readings.slice().reverse().map(toLivePoint)));
+  }, [historyData]);
 
   // Falls back to every meter in the section when no dedicated incomer
   // reading is available yet (e.g. the plant-wide view, which passes none).
@@ -108,19 +138,7 @@ function SectionColumn({ meterReadings, energyReadings, selectedPlantId, section
 
   const prevRef = { current: liveHistory };
   if (e && (prevRef.current.length === 0 || prevRef.current[prevRef.current.length - 1]?.ts !== e.recorded_at)) {
-    const point: any = {
-      ts: e.recorded_at,
-      time: format(new Date(e.recorded_at), 'HH:mm:ss'),
-      VR: +parseFloat(String(e.voltage_r)).toFixed(1),
-      VY: +parseFloat(String(e.voltage_y)).toFixed(1),
-      VB: +parseFloat(String(e.voltage_b)).toFixed(1),
-      IR: +parseFloat(String(e.current_r)).toFixed(1),
-      IY: +parseFloat(String(e.current_y)).toFixed(1),
-      IB: +parseFloat(String(e.current_b)).toFixed(1),
-      'kW': +parseFloat(String(e.power_kw)).toFixed(2),
-      'kVA': +parseFloat(String(e.power_kva)).toFixed(2),
-      PF: +parseFloat(String(e.power_factor)).toFixed(3),
-    };
+    const point = toLivePoint(e);
     setTimeout(() => setLiveHistory((prev) => [...prev.slice(-(MAX_LIVE - 1)), point]), 0);
   }
 
@@ -323,8 +341,8 @@ const SECTION_THEMES = [
 // Everything for one plant section (P1, P4, ...): its own Daily/Monthly/Yearly
 // toggle and the stats/consumption queries that depend on it, so switching
 // one plant's period never touches another plant's charts.
-function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, energyReadings, selectedPlantId, theme }: {
-  section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; energyReadings: LiveReadingPayload[]; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
+function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings, energyReadings, historyMeterId, selectedPlantId, theme }: {
+  section: string; isCEB: boolean; gen: any; readings: LiveReadingPayload[]; energyReadings: LiveReadingPayload[]; historyMeterId?: string; selectedPlantId: string | null; theme: typeof SECTION_THEMES[number];
 }) {
   const { data: statsData } = useQuery({
     queryKey: ['dashboard-stats', selectedPlantId, section],
@@ -371,7 +389,7 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
       </div>
 
       {/* Live trend, consumption charts, real-time/phase-level detail */}
-      <SectionColumn meterReadings={readings} energyReadings={energyReadings} selectedPlantId={selectedPlantId} section={section} />
+      <SectionColumn meterReadings={readings} energyReadings={energyReadings} historyMeterId={historyMeterId} selectedPlantId={selectedPlantId} section={section} />
     </div>
   );
 }
@@ -431,12 +449,20 @@ export default function DashboardPage() {
     // never updated live, so it can't reflect an actual CEB<->Generator switch.
     // Only fall back to it for sections with no power status sensor registered yet.
     const genStatus = latestGen?.generator?.status;
+    // Which single meter to preload Live Trend history from - the section's
+    // dedicated incomer when there is exactly one, so preloaded points match
+    // what the live aggregation will show once readings start arriving.
+    // Skipped (left undefined) for a section with no dedicated incomer or
+    // more than one, since summing separate meters' history rows by
+    // recorded_at without alignment would produce a jagged, misleading trend.
+    const sectionMainIds = Array.from(idsInSection).filter((id) => mainIncomerIds.has(id));
     return {
       section,
       isCEB: genStatus != null ? genStatus !== 'ON' : sectionEnergy?.source !== 'GENERATOR',
       gen: latestGen?.generator,
       readings: readingsInSection,
       energyReadings,
+      historyMeterId: sectionMainIds.length === 1 ? sectionMainIds[0] : undefined,
     };
   });
 

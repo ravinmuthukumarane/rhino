@@ -79,17 +79,19 @@ export async function getLatestReadingsByMeter(req: AuthRequest, res: Response, 
 }
 
 export async function getEnergyHistory(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { from, to, plant_id, meter_id, limit = '500' } = req.query as Record<string, string>;
+  const { from, to, plant_id, meter_id, plant_section, limit = '500' } = req.query as Record<string, string>;
   try {
     const { rows } = await pool.query(
       `SELECT er.*, p.name AS plant_name FROM energy_readings er
        LEFT JOIN plants p ON p.id = er.plant_id
+       LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
        WHERE ($1::timestamptz IS NULL OR er.recorded_at >= $1)
          AND ($2::timestamptz IS NULL OR er.recorded_at <= $2)
          AND ($3::uuid IS NULL OR er.plant_id = $3)
          AND ($4::text IS NULL OR er.meter_id = $4)
+         AND ($6::text IS NULL OR em.plant_section = $6)
        ORDER BY er.recorded_at DESC LIMIT $5`,
-      [from ?? null, to ?? null, plant_id ?? null, meter_id ?? null, Math.min(parseInt(limit), 2000)]
+      [from ?? null, to ?? null, plant_id ?? null, meter_id ?? null, Math.min(parseInt(limit), 2000), plant_section ?? null]
     );
     res.json({ readings: rows });
   } catch (err) { next(err); }
