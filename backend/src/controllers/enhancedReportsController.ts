@@ -85,7 +85,9 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
         pfCount[row.meter_id] = 0;
       }
 
-      const kwh = parseFloat(row.period_kwh || '0');
+      // Same sensor-noise-nets-negative issue as generator analysis below -
+      // consumption can't be negative, clamp it.
+      const kwh = Math.max(0, parseFloat(row.period_kwh || '0'));
       const pf = parseFloat(row.avg_pf || '0');
       const field = periodField(row.time_period);
 
@@ -169,12 +171,17 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
       if (!dailyBreakdown[dateStr]) {
         dailyBreakdown[dateStr] = { ceb_kwh: 0, generator_kwh: 0, switchovers: 0 };
       }
+      // A meter reporting 0kW while idle still carries tiny sensor noise
+      // (readings down to a few W negative) - summed over a day that nets to
+      // a microscopic negative kWh instead of exactly 0, which showed up as
+      // a nonsensical "-0.0 kWh". Consumption can't be negative; clamp it.
+      const kwh = Math.max(0, parseFloat(row.period_kwh || '0'));
       if (row.source === 'CEB') {
-        dailyBreakdown[dateStr].ceb_kwh += parseFloat(row.period_kwh || '0');
-        totalCebKwh += parseFloat(row.period_kwh || '0');
+        dailyBreakdown[dateStr].ceb_kwh += kwh;
+        totalCebKwh += kwh;
       } else {
-        dailyBreakdown[dateStr].generator_kwh += parseFloat(row.period_kwh || '0');
-        totalGenKwh += parseFloat(row.period_kwh || '0');
+        dailyBreakdown[dateStr].generator_kwh += kwh;
+        totalGenKwh += kwh;
       }
     });
 
