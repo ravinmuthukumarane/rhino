@@ -3,15 +3,37 @@ import { emailService } from './emailService';
 import { AlertSetpoint, EnergyReading, PowerSource, Alert } from '../types';
 import { Server } from 'socket.io';
 
-let spCache: Record<string, AlertSetpoint> = {};
+let globalSpCache: Record<string, AlertSetpoint> = {};
+// meter_id -> alert_type -> setpoint. Holds device rows regardless of their
+// own `enabled` flag - an explicitly-disabled device row must suppress the
+// alert for that meter even when the global setpoint is enabled, so it has
+// to stay distinguishable from "no override exists" (see getEffectiveSetpoint).
+let deviceSpCache: Record<string, Record<string, AlertSetpoint>> = {};
 let cacheTime = 0;
 
-async function getSetpoints(): Promise<Record<string, AlertSetpoint>> {
-  if (Date.now() - cacheTime < 60000 && Object.keys(spCache).length) return spCache;
-  const { rows } = await pool.query<AlertSetpoint>('SELECT * FROM alert_setpoints WHERE enabled = true');
-  spCache = Object.fromEntries(rows.map((r) => [r.alert_type, r]));
+async function refreshSetpointCache(): Promise<void> {
+  if (Date.now() - cacheTime < 60000 && cacheTime > 0) return;
+  const [{ rows: globalRows }, { rows: deviceRows }] = await Promise.all([
+    pool.query<AlertSetpoint>('SELECT * FROM alert_setpoints WHERE enabled = true'),
+    pool.query<AlertSetpoint & { meter_id: string }>('SELECT * FROM device_alert_setpoints'),
+  ]);
+  globalSpCache = Object.fromEntries(globalRows.map((r) => [r.alert_type, r]));
+  const byMeter: Record<string, Record<string, AlertSetpoint>> = {};
+  for (const r of deviceRows) {
+    (byMeter[(r as any).meter_id] ??= {})[r.alert_type] = r;
+  }
+  deviceSpCache = byMeter;
   cacheTime = Date.now();
-  return spCache;
+}
+
+// Device-specific setpoint overrides the global one for that meter+alert_type,
+// including to explicitly turn the alert off for just that device. With no
+// device override, falls back to the global setpoint (already filtered to
+// enabled ones above).
+function getEffectiveSetpoint(meterId: string | undefined, alertType: string): AlertSetpoint | undefined {
+  const device = meterId ? deviceSpCache[meterId]?.[alertType] : undefined;
+  if (device) return device.enabled ? device : undefined;
+  return globalSpCache[alertType];
 }
 
 async function getAdminEmails(): Promise<string[]> {
@@ -38,7 +60,14 @@ async function canEmail(alertType: string): Promise<boolean> {
 }
 
 export async function checkAndAlert(reading: EnergyReading, io: Server): Promise<void> {
-  const sp = await getSetpoints();
+  await refreshSetpointCache();
+  const meterId = reading.meter_id;
+  const sp = {
+    over_voltage: getEffectiveSetpoint(meterId, 'over_voltage'),
+    low_voltage: getEffectiveSetpoint(meterId, 'low_voltage'),
+    low_power_factor: getEffectiveSetpoint(meterId, 'low_power_factor'),
+    high_kva: getEffectiveSetpoint(meterId, 'high_kva'),
+  };
   const avgV = ((reading.voltage_r ?? 0) + (reading.voltage_y ?? 0) + (reading.voltage_b ?? 0)) / 3;
   const alerts: Partial<Alert>[] = [];
 
@@ -59,7 +88,7 @@ export async function checkAndAlert(reading: EnergyReading, io: Server): Promise
   for (const data of alerts) {
     const alert = await insertAlert(data);
     io.emit('new_alert', alert);
-    const setpoint = sp[data.alert_type!];
+    const setpoint = getEffectiveSetpoint(meterId, data.alert_type!);
     if (setpoint?.email_notify && await canEmail(data.alert_type!)) {
       const emails = await getAdminEmails();
       if (emails.length) {

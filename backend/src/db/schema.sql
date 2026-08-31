@@ -225,6 +225,29 @@ CREATE TABLE IF NOT EXISTS alert_setpoints (
 );
 
 -- ============================================================
+-- DEVICE-SPECIFIC ALERT SETPOINTS (override alert_setpoints per meter)
+-- A row here for (meter_id, alert_type) takes priority over the global
+-- alert_setpoints row of the same alert_type, including when it's the
+-- override that's disabled - see alertService.getEffectiveSetpoint.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS device_alert_setpoints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  meter_id VARCHAR(100) NOT NULL REFERENCES energy_meters(meter_id) ON DELETE CASCADE,
+  alert_type VARCHAR(100) NOT NULL,
+  min_value NUMERIC(12,3),
+  max_value NUMERIC(12,3),
+  enabled BOOLEAN DEFAULT true,
+  email_notify BOOLEAN DEFAULT true,
+  updated_by UUID REFERENCES users(id),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE (meter_id, alert_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_das_meter_id   ON device_alert_setpoints(meter_id);
+CREATE INDEX IF NOT EXISTS idx_das_alert_type ON device_alert_setpoints(alert_type);
+
+-- ============================================================
 -- ALERTS LOG
 -- ============================================================
 CREATE TABLE IF NOT EXISTS alerts (
@@ -298,6 +321,7 @@ CREATE TABLE IF NOT EXISTS reports (
   format VARCHAR(20) CHECK (format IN ('pdf', 'excel')),
   file_name VARCHAR(500),
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
+  plant_section VARCHAR(20),           -- 'P1'/'P4'/etc, or NULL for all sections
   generated_by UUID REFERENCES users(id),
   auto_generated BOOLEAN DEFAULT false,
   email_sent BOOLEAN DEFAULT false,
@@ -314,6 +338,7 @@ CREATE TABLE IF NOT EXISTS report_schedules (
   report_type VARCHAR(50) NOT NULL DEFAULT 'consumption_summary',
   format VARCHAR(20) NOT NULL DEFAULT 'excel' CHECK (format IN ('excel', 'pdf')),
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
+  plant_section VARCHAR(20),           -- 'P1'/'P4'/etc, or NULL for all sections
   updated_by UUID REFERENCES users(id),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

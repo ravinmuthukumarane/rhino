@@ -1,25 +1,7 @@
 -- ============================================================
--- UPGRADE: Device-Level Setpoints, Email Config, User Prefs
+-- UPGRADE: Email Config, User Prefs
+-- device_alert_setpoints moved to schema.sql (now created on every install).
 -- ============================================================
-
--- Device-specific alert setpoints (override global)
-CREATE TABLE IF NOT EXISTS device_alert_setpoints (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  meter_id VARCHAR(100) NOT NULL,
-  alert_type VARCHAR(100) NOT NULL,
-  min_value NUMERIC(12,3),
-  max_value NUMERIC(12,3),
-  enabled BOOLEAN DEFAULT true,
-  email_notify BOOLEAN DEFAULT true,
-  updated_by UUID REFERENCES users(id),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  CONSTRAINT fk_meter FOREIGN KEY (meter_id) REFERENCES energy_meters(meter_id) ON DELETE CASCADE,
-  CONSTRAINT unique_device_alert UNIQUE(meter_id, alert_type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_das_meter_id ON device_alert_setpoints(meter_id);
-CREATE INDEX IF NOT EXISTS idx_das_alert_type ON device_alert_setpoints(alert_type);
 
 -- Email report automation config
 CREATE TABLE IF NOT EXISTS email_report_configs (

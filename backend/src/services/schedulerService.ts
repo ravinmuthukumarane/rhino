@@ -34,13 +34,13 @@ async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void>
   try {
     const { buffer, filename, contentType } = await reportService.generate({
       type: sched.report_type, periodStart: start, periodEnd: end, format: sched.format,
-      plantId: sched.plant_id ?? undefined,
+      plantId: sched.plant_id ?? undefined, section: sched.plant_section ?? undefined,
       generatedBy: { id: 'system', email: 'system', name: 'System', role: 'admin', is_verified: true },
     });
 
     await pool.query(
-      'INSERT INTO reports (report_type,period_start,period_end,format,file_name,plant_id,auto_generated) VALUES ($1,$2,$3,$4,$5,$6,true)',
-      [sched.report_type, start, end, sched.format, filename, sched.plant_id ?? null]
+      'INSERT INTO reports (report_type,period_start,period_end,format,file_name,plant_id,plant_section,auto_generated) VALUES ($1,$2,$3,$4,$5,$6,$7,true)',
+      [sched.report_type, start, end, sched.format, filename, sched.plant_id ?? null, sched.plant_section ?? null]
     );
 
     const { rows } = await pool.query(

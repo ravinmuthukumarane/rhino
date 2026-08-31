@@ -55,6 +55,13 @@ export const alertsApi = {
   updateSetpoint: (type: string, data: object) => api.put(`/alerts/setpoints/${type}`, data),
 };
 
+export const deviceSetpointsApi = {
+  getEffective: (meterId: string) => api.get('/device-setpoints/effective', { params: { meter_id: meterId } }),
+  create: (data: object) => api.post('/device-setpoints', data),
+  update: (id: string, data: object) => api.put(`/device-setpoints/${id}`, data),
+  delete: (id: string) => api.delete(`/device-setpoints/${id}`),
+};
+
 export const reportsApi = {
   generate: (data: object) => api.post('/reports/generate', data, { responseType: 'blob' }),
   getHistory: () => api.get('/reports/history'),

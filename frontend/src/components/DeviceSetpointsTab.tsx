@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Trash2 } from 'lucide-react';
+import { settingsApi, deviceSetpointsApi } from '../services/api';
 
 export default function DeviceSetpointsTab() {
   const qc = useQueryClient();
@@ -12,20 +12,17 @@ export default function DeviceSetpointsTab() {
 
   const { data: meters } = useQuery({
     queryKey: ['energy-meters'],
-    queryFn: () => axios.get('/api/settings/energy-meters').then(r => r.data),
+    queryFn: () => settingsApi.getEnergyMeters().then(r => r.data),
   });
 
   const { data: setpoints } = useQuery({
     queryKey: ['device-setpoints', selectedMeter],
-    queryFn: () =>
-      axios.get('/api/device-setpoints/effective', { params: { meter_id: selectedMeter } })
-        .then(r => r.data),
+    queryFn: () => deviceSetpointsApi.getEffective(selectedMeter).then(r => r.data),
     enabled: !!selectedMeter,
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, ...data }: any) =>
-      axios.put(`/api/device-setpoints/${id}`, data),
+    mutationFn: ({ id, ...data }: any) => deviceSetpointsApi.update(id, data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device-setpoints'] });
       setEditingId(null);
@@ -35,8 +32,7 @@ export default function DeviceSetpointsTab() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      axios.delete(`/api/device-setpoints/${id}`),
+    mutationFn: (id: string) => deviceSetpointsApi.delete(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device-setpoints'] });
       toast.success('Setpoint deleted');
@@ -45,8 +41,7 @@ export default function DeviceSetpointsTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: any) =>
-      axios.post('/api/device-setpoints', data),
+    mutationFn: (data: any) => deviceSetpointsApi.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device-setpoints'] });
       setEditValues({});

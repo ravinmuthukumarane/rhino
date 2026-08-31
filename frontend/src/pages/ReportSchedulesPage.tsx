@@ -1,12 +1,12 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { reportsApi, settingsApi } from '../services/api';
+import { reportsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { fmt } from '../utils/formatters';
 import { Clock, Mail, UserPlus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import type { Plant, ReportScheduleRecipient } from '../types';
+import type { ReportScheduleRecipient } from '../types';
 
 const REPORTS = [
   { value: 'energy_daily',        label: 'Daily Energy Consumption' },
@@ -18,18 +18,23 @@ const REPORTS = [
   { value: 'consumption_summary', label: 'Full Consumption Summary' },
 ];
 
-function ScheduleCard({ schedule, plants, onSave, saving }: {
-  schedule: { frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string; plant_id: string | null };
-  plants: Plant[];
+const SECTIONS = [
+  { value: '',   label: 'All Plants (P1 + P4)' },
+  { value: 'P1', label: 'Plant 1' },
+  { value: 'P4', label: 'Plant 4' },
+];
+
+function ScheduleCard({ schedule, onSave, saving }: {
+  schedule: { frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string; plant_id: string | null; plant_section: string | null };
   onSave: (data: object) => void;
   saving: boolean;
 }) {
   const [f, setF] = useState({
     enabled: schedule.enabled, report_type: schedule.report_type,
-    format: schedule.format, plant_id: schedule.plant_id ?? '',
+    format: schedule.format, plant_id: schedule.plant_id ?? '', plant_section: schedule.plant_section ?? '',
   });
   useEffect(() => {
-    setF({ enabled: schedule.enabled, report_type: schedule.report_type, format: schedule.format, plant_id: schedule.plant_id ?? '' });
+    setF({ enabled: schedule.enabled, report_type: schedule.report_type, format: schedule.format, plant_id: schedule.plant_id ?? '', plant_section: schedule.plant_section ?? '' });
   }, [schedule]);
 
   return (
@@ -56,9 +61,8 @@ function ScheduleCard({ schedule, plants, onSave, saving }: {
         </div>
         <div>
           <label className="label">Plant</label>
-          <select value={f.plant_id} onChange={(e) => setF({ ...f, plant_id: e.target.value })} className="input text-sm">
-            <option value="">All Plants</option>
-            {plants.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          <select value={f.plant_section} onChange={(e) => setF({ ...f, plant_section: e.target.value })} className="input text-sm">
+            {SECTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
         </div>
       </div>
@@ -164,11 +168,6 @@ export default function ReportSchedulesPage() {
     queryKey: ['report-schedules'],
     queryFn: () => reportsApi.getSchedules().then((r) => r.data),
   });
-  const { data: plantsData } = useQuery({
-    queryKey: ['plants'],
-    queryFn: () => settingsApi.getPlants().then((r) => r.data),
-  });
-  const plants: Plant[] = plantsData?.plants ?? [];
   const schedules = schedulesData?.schedules ?? [];
 
   const scheduleMutation = useMutation({
@@ -195,7 +194,7 @@ export default function ReportSchedulesPage() {
           <div key={freq} className="card space-y-4">
             <h3 className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{freq} Report</h3>
             {schedule && (
-              <ScheduleCard schedule={schedule} plants={plants}
+              <ScheduleCard schedule={schedule}
                 onSave={(data) => scheduleMutation.mutate({ frequency: freq, data })}
                 saving={scheduleMutation.isPending} />
             )}

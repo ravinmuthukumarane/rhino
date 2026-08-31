@@ -180,6 +180,7 @@ export interface GenerateReportInput {
   format: ReportFormat;
   plantId?: string;
   meterId?: string;
+  section?: string;
   generatedBy: AuthUser;
 }
 

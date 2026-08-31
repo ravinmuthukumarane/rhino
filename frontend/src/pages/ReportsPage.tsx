@@ -16,9 +16,16 @@ const REPORTS = [
   { value: 'consumption_summary', label: 'Full Consumption Summary' },
 ];
 
+const SECTIONS = [
+  { value: '',   label: 'All Plants (P1 + P4)' },
+  { value: 'P1', label: 'Plant 1' },
+  { value: 'P4', label: 'Plant 4' },
+];
+
 export default function ReportsPage() {
   const { selectedPlantId } = usePlant();
   const [reportType, setReportType] = useState('energy_daily');
+  const [section, setSection] = useState('');
   const [dateFrom, setDateFrom] = useState(
     new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]
   );
@@ -47,6 +54,7 @@ export default function ReportsPage() {
       period_end: dateTo,
       format,
       plant_id: selectedPlantId || undefined,
+      plant_section: section || undefined,
     });
   };
 
@@ -59,13 +67,24 @@ export default function ReportsPage() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Generate Report</h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="label">Report Type</label>
             <select value={reportType} onChange={(e) => setReportType(e.target.value)} className="input text-sm">
               {REPORTS.map((r) => (
                 <option key={r.value} value={r.value}>
                   {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="label">Plant</label>
+            <select value={section} onChange={(e) => setSection(e.target.value)} className="input text-sm">
+              {SECTIONS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
                 </option>
               ))}
             </select>
@@ -122,7 +141,7 @@ export default function ReportsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
-                  {['Type', 'Period', 'Format', 'Generated'].map((h) => (
+                  {['Type', 'Plant', 'Period', 'Format', 'Generated'].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">
                       {h}
                     </th>
@@ -134,6 +153,9 @@ export default function ReportsPage() {
                   <tr key={r.id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
                     <td className="px-4 py-2.5 text-gray-800 dark:text-gray-200 text-xs">
                       {r.report_type?.replace(/_/g, ' ')}
+                    </td>
+                    <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
+                      {r.plant_section === 'P1' ? 'Plant 1' : r.plant_section === 'P4' ? 'Plant 4' : 'All Plants'}
                     </td>
                     <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
                       {r.period_start ? `${fmt.date(r.period_start)} – ${fmt.date(r.period_end)}` : '—'}
