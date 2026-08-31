@@ -23,16 +23,15 @@ const KWH_FACTOR_SQL = '(5.0/3600)';
 
 // Tariff Report: Day/Peak/Off-Peak breakdown
 export async function getTariffReport(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { plant_id, from, to } = req.query;
+  const { plant_id, plant_section, from, to } = req.query;
   if (!from || !to) { res.status(400).json({ error: 'from and to dates required' }); return; }
 
   try {
-    const { rows: plantInfo } = await pool.query(
-      'SELECT id, name FROM plants WHERE id = $1',
-      [plant_id]
-    );
+    const { rows: plantInfo } = plant_id
+      ? await pool.query('SELECT id, name FROM plants WHERE id = $1', [plant_id])
+      : { rows: [{ id: null, name: null }] };
 
-    if (!plantInfo[0]) { res.status(404).json({ error: 'Plant not found' }); return; }
+    if (plant_id && !plantInfo[0]) { res.status(404).json({ error: 'Plant not found' }); return; }
 
     // Get all energy readings for the period, grouped by meter and time period
     const { rows: readings } = await pool.query(
@@ -47,12 +46,13 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          COUNT(*) as reading_count
        FROM energy_readings er
        LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
-       WHERE er.plant_id = $1
+       WHERE ($1::uuid IS NULL OR er.plant_id = $1)
+         AND ($4::text IS NULL OR em.plant_section = $4)
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
        GROUP BY em.meter_id, em.name, er.time_period
        ORDER BY em.meter_id, er.time_period`,
-      [plant_id, startOfDayIST(String(from)), endOfDayExclusive(String(to))]
+      [plant_id ?? null, startOfDayIST(String(from)), endOfDayExclusive(String(to)), plant_section ?? null]
     );
 
     // time_period in the DB is 'day'/'peak'/'off_peak' - the API/frontend
@@ -118,7 +118,7 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
 
 // Generator Analysis: CEB vs Generator breakdown
 export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { plant_id, from, to } = req.query;
+  const { plant_id, plant_section, from, to } = req.query;
   if (!from || !to) { res.status(400).json({ error: 'from and to dates required' }); return; }
 
   try {
@@ -135,12 +135,14 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
          er.source,
          SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh
        FROM energy_readings er
-       WHERE er.plant_id = $1
+       LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
+       WHERE ($1::uuid IS NULL OR er.plant_id = $1)
+         AND ($4::text IS NULL OR em.plant_section = $4)
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
        GROUP BY (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date, er.meter_id, er.source
        ORDER BY record_date DESC, er.meter_id`,
-      [plant_id, fromInclusive, toExclusive]
+      [plant_id ?? null, fromInclusive, toExclusive, plant_section ?? null]
     );
 
     // Power interruptions (switchovers)
@@ -148,12 +150,14 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
       `SELECT
          (started_at AT TIME ZONE 'Asia/Colombo')::date as switchover_date,
          COUNT(*) as switchover_count
-       FROM power_interruptions
-       WHERE plant_id = $1
+       FROM power_interruptions pi
+       LEFT JOIN energy_meters em ON em.meter_id = pi.meter_id
+       WHERE ($1::uuid IS NULL OR pi.plant_id = $1)
+         AND ($4::text IS NULL OR em.plant_section = $4)
          AND started_at >= $2::timestamptz
          AND started_at < $3::timestamptz
        GROUP BY (started_at AT TIME ZONE 'Asia/Colombo')::date`,
-      [plant_id, fromInclusive, toExclusive]
+      [plant_id ?? null, fromInclusive, toExclusive, plant_section ?? null]
     );
 
     // Aggregate daily
@@ -174,11 +178,13 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
       }
     });
 
-    // Add switchover counts
+    // Add switchover counts. COUNT(*) comes back from pg as a string (bigint
+    // precision safety) - parse it, or `total_switchovers` below concatenates
+    // digit strings instead of summing (e.g. "1" + "2" -> "12", not 3).
     interruptions.forEach((row: any) => {
       const dateStr = row.switchover_date.toISOString().split('T')[0];
       if (dailyBreakdown[dateStr]) {
-        dailyBreakdown[dateStr].switchovers = row.switchover_count;
+        dailyBreakdown[dateStr].switchovers = parseInt(row.switchover_count, 10) || 0;
       }
     });
 
@@ -200,7 +206,7 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
         total_generator_kwh: totalGenKwh.toFixed(2),
         total_kwh: monthlyTotal.toFixed(2),
         generator_percentage: generatorPercentage,
-        total_switchovers: interruptions.reduce((sum, row) => sum + (row.switchover_count || 0), 0),
+        total_switchovers: interruptions.reduce((sum, row: any) => sum + (parseInt(row.switchover_count, 10) || 0), 0),
       },
     });
   } catch (err) { next(err); }

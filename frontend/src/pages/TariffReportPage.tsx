@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { usePlant } from '../context/PlantContext';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { reportsApi } from '../services/api';
 import { numFmt } from '../utils/formatters';
 
+const SECTIONS = [
+  { value: 'P1', label: 'Plant 1' },
+  { value: 'P4', label: 'Plant 4' },
+  { value: '',   label: 'All Plants (P1 + P4)' },
+];
+
 export default function TariffReportPage() {
-  const { plants } = usePlant();
-  const [plant, setPlant] = useState('');
+  const [section, setSection] = useState('P1');
   const [from, setFrom] = useState(new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0]);
   const [to, setTo] = useState(new Date().toISOString().split('T')[0]);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tariff-report', plant, from, to],
-    queryFn: () => reportsApi.getTariffReport({ plant_id: plant, from, to }).then(r => r.data),
-    enabled: !!plant,
+    queryKey: ['tariff-report', section, from, to],
+    queryFn: () => reportsApi.getTariffReport({ plant_section: section || undefined, from, to }).then(r => r.data),
   });
 
   const colors = ['#3b82f6', '#ef4444', '#10b981'];
@@ -29,10 +32,9 @@ export default function TariffReportPage() {
       <div className="card grid grid-cols-4 gap-4">
         <div>
           <label className="label">Plant</label>
-          <select value={plant} onChange={e => setPlant(e.target.value)} className="input text-sm">
-            <option value="">Select Plant</option>
-            {plants?.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+          <select value={section} onChange={e => setSection(e.target.value)} className="input text-sm">
+            {SECTIONS.map(s => (
+              <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
         </div>

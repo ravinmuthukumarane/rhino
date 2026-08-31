@@ -360,10 +360,10 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
 
       {/* Today stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" sub={`CEB: ${fmt.kwh(today?.energy?.ceb_kwh)}`} />
+        <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" />
         <MetricCard label="Today Diesel" value={fmt.lit(today?.diesel?.total_liters)} color="orange" sub={`Run: ${fmt.n2(today?.diesel?.run_hours)} hrs`} />
         <MetricCard label="Active Alerts" value={statsData?.activeAlerts ?? '—'} color={statsData?.activeAlerts > 0 ? 'red' : 'green'} sub={`${statsData?.todayInterruptions ?? 0} interruptions`} />
-        <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(today?.energy?.avg_power_factor)}`} />
+        <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" />
       </div>
 
       {/* Power source indicator */}
@@ -503,10 +503,10 @@ export default function DashboardPage() {
         <>
           {/* Today stats row */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" sub={`CEB: ${fmt.kwh(today?.energy?.ceb_kwh)}`} />
+            <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" />
             <MetricCard label="Today Diesel" value={fmt.lit(today?.diesel?.total_liters)} color="orange" sub={`Run: ${fmt.n2(today?.diesel?.run_hours)} hrs`} />
             <MetricCard label="Active Alerts" value={statsData?.activeAlerts ?? '—'} color={statsData?.activeAlerts > 0 ? 'red' : 'green'} sub={`${statsData?.todayInterruptions ?? 0} interruptions`} />
-            <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(today?.energy?.avg_power_factor)}`} />
+            <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" />
           </div>
 
           {/* Consumption charts - each card owns its own Daily/Monthly/Yearly toggle */}
