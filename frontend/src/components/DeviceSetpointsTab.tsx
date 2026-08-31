@@ -1,14 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Plus } from 'lucide-react';
 import { settingsApi, deviceSetpointsApi } from '../services/api';
+
+const ALERT_TYPES = [
+  { value: 'over_voltage',     label: 'Over Voltage',       unit: 'V',   bound: 'max' as const },
+  { value: 'low_voltage',      label: 'Low Voltage',        unit: 'V',   bound: 'min' as const },
+  { value: 'low_power_factor', label: 'Low Power Factor',   unit: '',    bound: 'min' as const },
+  { value: 'high_kva',         label: 'High KVA Demand',    unit: 'kVA', bound: 'max' as const },
+  { value: 'power_interruption', label: 'Power Interruption', unit: '',  bound: 'none' as const },
+];
 
 export default function DeviceSetpointsTab() {
   const qc = useQueryClient();
   const [selectedMeter, setSelectedMeter] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<any>({});
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newSp, setNewSp] = useState({ alert_type: '', min_value: '', max_value: '', enabled: true, email_notify: true });
 
   const { data: meters } = useQuery({
     queryKey: ['energy-meters'],
@@ -40,15 +50,25 @@ export default function DeviceSetpointsTab() {
     onError: () => toast.error('Failed to delete'),
   });
 
+  const existingTypes: string[] = setpoints?.setpoints?.filter((s: any) => s.source === 'device').map((s: any) => s.alert_type) || [];
+  const availableTypes = ALERT_TYPES.filter((t) => !existingTypes.includes(t.value));
+
   const createMutation = useMutation({
     mutationFn: (data: any) => deviceSetpointsApi.create(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['device-setpoints'] });
-      setEditValues({});
+      setShowAddForm(false);
+      setNewSp({ alert_type: '', min_value: '', max_value: '', enabled: true, email_notify: true });
       toast.success('Setpoint created');
     },
     onError: () => toast.error('Failed to create'),
   });
+
+  useEffect(() => {
+    if (showAddForm && !newSp.alert_type && availableTypes.length > 0) {
+      setNewSp((v) => ({ ...v, alert_type: availableTypes[0].value }));
+    }
+  }, [showAddForm, availableTypes, newSp.alert_type]);
 
   const handleSave = (sp: any) => {
     const { min_value, max_value, enabled, email_notify } = editValues[sp.id] || sp;
@@ -61,29 +81,19 @@ export default function DeviceSetpointsTab() {
     });
   };
 
-  const handleCreateNew = () => {
-    if (!selectedMeter) {
-      toast.error('Select a meter first');
-      return;
-    }
-    const alertTypes = ['over_voltage', 'low_voltage', 'low_power_factor', 'high_kva', 'power_interruption'];
-    const existingTypes = setpoints?.setpoints?.filter((s: any) => s.source === 'device').map((s: any) => s.alert_type) || [];
-    const available = alertTypes.find(t => !existingTypes.includes(t));
-
-    if (!available) {
-      toast.error('All alert types already configured');
-      return;
-    }
-
+  const handleCreate = () => {
+    if (!newSp.alert_type) { toast.error('Select a parameter'); return; }
     createMutation.mutate({
       meter_id: selectedMeter,
-      alert_type: available,
-      min_value: null,
-      max_value: null,
-      enabled: true,
-      email_notify: true,
+      alert_type: newSp.alert_type,
+      min_value: newSp.min_value !== '' ? parseFloat(newSp.min_value) : null,
+      max_value: newSp.max_value !== '' ? parseFloat(newSp.max_value) : null,
+      enabled: newSp.enabled,
+      email_notify: newSp.email_notify,
     });
   };
+
+  const newSpMeta = ALERT_TYPES.find((t) => t.value === newSp.alert_type);
 
   return (
     <div className="space-y-4">
@@ -101,11 +111,58 @@ export default function DeviceSetpointsTab() {
 
       {selectedMeter && (
         <>
-          <div className="flex gap-2">
-            <button onClick={handleCreateNew} className="btn-primary text-sm">
-              + Create Device Override
-            </button>
-          </div>
+          {!showAddForm ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => availableTypes.length === 0 ? toast.error('All alert types already configured for this meter') : setShowAddForm(true)}
+                className="btn-primary text-sm flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Device Override
+              </button>
+            </div>
+          ) : (
+            <div className="border border-primary-500/40 rounded-lg p-4 space-y-3 bg-primary-50/40 dark:bg-primary-900/10">
+              <p className="text-sm font-medium text-gray-800 dark:text-gray-200">New override for this meter</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="label">Parameter</label>
+                  <select value={newSp.alert_type} onChange={e => setNewSp({ ...newSp, alert_type: e.target.value })} className="input text-sm">
+                    {availableTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                {newSpMeta?.bound !== 'none' && (
+                  <>
+                    <div>
+                      <label className="label">Min Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
+                      <input type="number" step="any" className="input text-sm" placeholder={newSpMeta?.bound === 'min' ? 'required' : 'optional'}
+                        value={newSp.min_value} onChange={e => setNewSp({ ...newSp, min_value: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="label">Max Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
+                      <input type="number" step="any" className="input text-sm" placeholder={newSpMeta?.bound === 'max' ? 'required' : 'optional'}
+                        value={newSp.max_value} onChange={e => setNewSp({ ...newSp, max_value: e.target.value })} />
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" checked={newSp.enabled} onChange={e => setNewSp({ ...newSp, enabled: e.target.checked })} className="w-4 h-4" /> Enabled
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" checked={newSp.email_notify} onChange={e => setNewSp({ ...newSp, email_notify: e.target.checked })} className="w-4 h-4" /> Email alert
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={handleCreate} disabled={createMutation.isPending} className="btn-primary text-sm py-1.5 px-4">
+                  {createMutation.isPending ? 'Creating…' : 'Create'}
+                </button>
+                <button onClick={() => { setShowAddForm(false); setNewSp({ alert_type: '', min_value: '', max_value: '', enabled: true, email_notify: true }); }} className="btn-secondary text-sm py-1.5 px-4">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {setpoints?.setpoints && (
             <div className="overflow-hidden border border-gray-200 dark:border-gray-800 rounded-lg">
