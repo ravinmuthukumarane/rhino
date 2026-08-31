@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { alertsApi } from '../services/api';
 import { fmt } from '../utils/formatters';
-import { Settings, Save } from 'lucide-react';
+import { Settings, Save, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import type { AlertSetpoint } from '../types';
 
 function Row({ sp, onSave }: { sp: AlertSetpoint; onSave: (type: string, data: object) => void }) {
@@ -62,8 +62,17 @@ export default function SetpointsPage() {
     <div className="space-y-5">
       <div className="card">
         <h3 className="font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-2 mb-1"><Settings className="w-4 h-4 text-primary-600 dark:text-primary-400" />Alert Setpoints</h3>
-        <p className="text-sm text-gray-600 dark:text-gray-400">Configure thresholds for automatic alerts and email notifications. Changes take effect within 1 minute.</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">Configure the global thresholds below - they apply to every meter that doesn't have its own override. Changes take effect within 1 minute.</p>
       </div>
+
+      <Link to="/device-settings" state={{ tab: 'setpoints' }}
+        className="card flex items-center justify-between hover:border-primary-500 dark:hover:border-primary-500 transition-colors group">
+        <div>
+          <p className="text-sm font-medium text-gray-800 dark:text-gray-200">Need different thresholds for a specific meter?</p>
+          <p className="text-xs text-gray-500 mt-0.5">Set a per-device override in Device Settings → Device Setpoints - it takes priority over the global setpoint above for that meter only.</p>
+        </div>
+        <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-primary-600 dark:group-hover:text-primary-400 flex-shrink-0 ml-3" />
+      </Link>
 
       <div className="card overflow-hidden p-0">
         <div className="overflow-x-auto">

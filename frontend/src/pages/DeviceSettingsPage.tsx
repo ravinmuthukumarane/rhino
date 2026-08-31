@@ -4,7 +4,7 @@ import { settingsApi } from '../services/api';
 import { Factory, Plus, Edit2, Trash2, Check, X, Zap, Droplets, Cpu, Activity, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import type { Plant, EnergyMeter, FlowMeter, Generator, PowerStatusSensor } from '../types';
 import DeviceSetpointsTab from '../components/DeviceSetpointsTab';
 
@@ -230,7 +230,9 @@ export default function DeviceSettingsPage() {
   const { isAdmin } = useAuth();
   if (!isAdmin) return <Navigate to="/" replace />;
 
-  const [tab, setTab] = useState<Tab>('plants');
+  const location = useLocation();
+  const initialTab = (location.state as { tab?: Tab } | null)?.tab;
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'plants');
   const [addNew, setAddNew] = useState(false);
   const qc = useQueryClient();
 
