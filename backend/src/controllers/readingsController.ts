@@ -13,7 +13,7 @@ import { AuthRequest } from '../types';
 // kept as direct contributors. Only applies when aggregating a whole
 // plant/section (em required via a join aliased `em`); per-meter queries
 // should skip it so a specific submeter's own figures aren't zeroed out.
-const MAIN_METER_FILTER_SQL = `(
+export const MAIN_METER_FILTER_SQL = `(
   NOT EXISTS (
     SELECT 1 FROM energy_meters em2
     WHERE em2.plant_id = em.plant_id AND em2.plant_section = em.plant_section AND em2.plant_section IS NOT NULL

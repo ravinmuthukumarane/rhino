@@ -352,6 +352,12 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
 
   const today = statsData?.today ?? {};
 
+  // Same aggregation SectionColumn uses for its "Power Factor" reading card -
+  // the section's dedicated incomer meter (falling back to every meter in the
+  // section) - so this subtitle always matches that card, not a backend
+  // average across submeters.
+  const sectionEnergy = aggregateEnergyReadings(energyReadings.map((r) => r.energy).filter((x): x is EnergyReading => x != null));
+
   return (
     <div className={`rounded-2xl border ${theme.border} ${theme.bg} ${theme.ring} p-4 sm:p-5 space-y-5`}>
       <div className="flex items-center gap-2.5">
@@ -363,7 +369,7 @@ function SectionBlock({ section, isCEB: sectionIsCEB, gen: sectionGen, readings,
         <MetricCard label="Today Energy" value={fmt.kwh(today?.energy?.total_kwh)} color="primary" />
         <MetricCard label="Today Diesel" value={fmt.lit(today?.diesel?.total_liters)} color="orange" sub={`Run: ${fmt.n2(today?.diesel?.run_hours)} hrs`} />
         <MetricCard label="Active Alerts" value={statsData?.activeAlerts ?? '—'} color={statsData?.activeAlerts > 0 ? 'red' : 'green'} sub={`${statsData?.todayInterruptions ?? 0} interruptions`} />
-        <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" />
+        <MetricCard label="Max KVA Today" value={fmt.kva(today?.energy?.max_kva)} color="purple" sub={`Avg PF: ${fmt.pf(sectionEnergy?.power_factor)}`} />
       </div>
 
       {/* Power source indicator */}

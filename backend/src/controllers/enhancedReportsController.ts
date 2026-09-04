@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
+import { MAIN_METER_FILTER_SQL } from './readingsController';
 
 // `from`/`to` arrive as plain dates (e.g. "2026-08-12") picked against Sri
 // Lanka's calendar - the server runs on UTC system time, so parsing them as
@@ -50,6 +51,7 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          AND ($4::text IS NULL OR em.plant_section = $4)
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
+         AND ${MAIN_METER_FILTER_SQL}
        GROUP BY em.meter_id, em.name, er.time_period
        ORDER BY em.meter_id, er.time_period`,
       [plant_id ?? null, startOfDayIST(String(from)), endOfDayExclusive(String(to)), plant_section ?? null]
@@ -142,6 +144,7 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
          AND ($4::text IS NULL OR em.plant_section = $4)
          AND er.recorded_at >= $2::timestamptz
          AND er.recorded_at < $3::timestamptz
+         AND ${MAIN_METER_FILTER_SQL}
        GROUP BY (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date, er.meter_id, er.source
        ORDER BY record_date DESC, er.meter_id`,
       [plant_id ?? null, fromInclusive, toExclusive, plant_section ?? null]
