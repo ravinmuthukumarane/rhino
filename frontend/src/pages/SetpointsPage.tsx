@@ -8,7 +8,17 @@ import { useAuth } from '../context/AuthContext';
 import { Navigate, Link } from 'react-router-dom';
 import type { AlertSetpoint } from '../types';
 
+// Which bound each alert type actually evaluates (see alertService.ts) - the
+// other field is accepted and saved by the API with no validation, but
+// silently never checked, so it's disabled here rather than letting an
+// admin configure a threshold that looks saved but can never fire.
+const BOUNDS: Record<string, 'min' | 'max' | 'none'> = {
+  over_voltage: 'max', low_voltage: 'min', low_power_factor: 'min',
+  high_kva: 'max', power_interruption: 'none',
+};
+
 function Row({ sp, onSave }: { sp: AlertSetpoint; onSave: (type: string, data: object) => void }) {
+  const bound = BOUNDS[sp.alert_type];
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     min_value: sp.min_value?.toString() ?? '',
@@ -19,8 +29,8 @@ function Row({ sp, onSave }: { sp: AlertSetpoint; onSave: (type: string, data: o
 
   const save = () => {
     onSave(sp.alert_type, {
-      min_value: form.min_value !== '' ? parseFloat(form.min_value) : null,
-      max_value: form.max_value !== '' ? parseFloat(form.max_value) : null,
+      min_value: bound === 'min' && form.min_value !== '' ? parseFloat(form.min_value) : null,
+      max_value: bound === 'max' && form.max_value !== '' ? parseFloat(form.max_value) : null,
       enabled: form.enabled,
       email_notify: form.email_notify,
     });
@@ -31,8 +41,8 @@ function Row({ sp, onSave }: { sp: AlertSetpoint; onSave: (type: string, data: o
     <tr className="border-b border-gray-200 dark:border-gray-800/50">
       <td className="px-4 py-3"><p className="font-medium text-gray-800 dark:text-gray-200 text-sm">{sp.label}</p><p className="text-xs text-gray-500">{sp.alert_type}</p></td>
       <td className="px-4 py-3 text-gray-600 dark:text-gray-400 text-sm">{sp.unit ?? '—'}</td>
-      <td className="px-4 py-3">{editing ? <input type="number" step="any" className="input w-24 text-sm" value={form.min_value} onChange={(e) => setForm({ ...form, min_value: e.target.value })} /> : <span className="text-gray-700 dark:text-gray-300 text-sm">{sp.min_value ?? '—'}</span>}</td>
-      <td className="px-4 py-3">{editing ? <input type="number" step="any" className="input w-24 text-sm" value={form.max_value} onChange={(e) => setForm({ ...form, max_value: e.target.value })} /> : <span className="text-gray-700 dark:text-gray-300 text-sm">{sp.max_value ?? '—'}</span>}</td>
+      <td className="px-4 py-3">{bound !== 'min' ? <span className="text-gray-400 dark:text-gray-600 text-sm" title="Not evaluated for this alert type">n/a</span> : editing ? <input type="number" step="any" className="input w-24 text-sm" value={form.min_value} onChange={(e) => setForm({ ...form, min_value: e.target.value })} /> : <span className="text-gray-700 dark:text-gray-300 text-sm">{sp.min_value ?? '—'}</span>}</td>
+      <td className="px-4 py-3">{bound !== 'max' ? <span className="text-gray-400 dark:text-gray-600 text-sm" title="Not evaluated for this alert type">n/a</span> : editing ? <input type="number" step="any" className="input w-24 text-sm" value={form.max_value} onChange={(e) => setForm({ ...form, max_value: e.target.value })} /> : <span className="text-gray-700 dark:text-gray-300 text-sm">{sp.max_value ?? '—'}</span>}</td>
       <td className="px-4 py-3">{editing ? <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="w-4 h-4 accent-primary-500" /> : (sp.enabled ? <span className="badge-success">Yes</span> : <span className="text-gray-500 text-xs">No</span>)}</td>
       <td className="px-4 py-3">{editing ? <input type="checkbox" checked={form.email_notify} onChange={(e) => setForm({ ...form, email_notify: e.target.checked })} className="w-4 h-4 accent-primary-500" /> : (sp.email_notify ? <span className="badge-success">Yes</span> : <span className="text-gray-500 text-xs">No</span>)}</td>
       <td className="px-4 py-3 text-gray-500 text-xs">{fmt.datetime(sp.updated_at)}</td>

@@ -2,6 +2,16 @@ import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
 
+// Which bound each alert type is actually evaluated against in
+// alertService.ts - the other field was previously accepted here with no
+// validation and stored, but silently never checked (e.g. a "max" saved
+// against low_power_factor), which looked like a working upper-limit alarm
+// but could never fire. Null it out instead of trusting the caller.
+const BOUNDS: Record<string, 'min' | 'max' | 'none'> = {
+  over_voltage: 'max', low_voltage: 'min', low_power_factor: 'min',
+  high_kva: 'max', power_interruption: 'none',
+};
+
 export async function getDeviceSetpoints(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { meter_id } = req.query;
   try {
@@ -23,13 +33,14 @@ export async function createDeviceSetpoint(req: AuthRequest, res: Response, next
   if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin required' }); return; }
 
   const { meter_id, alert_type, min_value, max_value, enabled, email_notify } = req.body;
+  const bound = BOUNDS[alert_type];
   try {
     const { rows: [sp] } = await pool.query(
       `INSERT INTO device_alert_setpoints
         (meter_id, alert_type, min_value, max_value, enabled, email_notify, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
        RETURNING *`,
-      [meter_id, alert_type, min_value ?? null, max_value ?? null, enabled ?? true, email_notify ?? true, req.user.id]
+      [meter_id, alert_type, bound === 'min' ? (min_value ?? null) : null, bound === 'max' ? (max_value ?? null) : null, enabled ?? true, email_notify ?? true, req.user.id]
     );
     res.status(201).json({ setpoint: sp });
   } catch (err) { next(err); }
@@ -41,12 +52,15 @@ export async function updateDeviceSetpoint(req: AuthRequest, res: Response, next
   const { id } = req.params;
   const { min_value, max_value, enabled, email_notify } = req.body;
   try {
+    const { rows: [existing] } = await pool.query('SELECT alert_type FROM device_alert_setpoints WHERE id=$1', [id]);
+    if (!existing) { res.status(404).json({ error: 'Setpoint not found' }); return; }
+    const bound = BOUNDS[existing.alert_type];
     const { rows: [sp] } = await pool.query(
       `UPDATE device_alert_setpoints
        SET min_value=$1, max_value=$2, enabled=$3, email_notify=$4, updated_by=$5, updated_at=NOW()
        WHERE id=$6
        RETURNING *`,
-      [min_value ?? null, max_value ?? null, enabled ?? true, email_notify ?? true, req.user.id, id]
+      [bound === 'min' ? (min_value ?? null) : null, bound === 'max' ? (max_value ?? null) : null, enabled ?? true, email_notify ?? true, req.user.id, id]
     );
     if (!sp) { res.status(404).json({ error: 'Setpoint not found' }); return; }
     res.json({ setpoint: sp });

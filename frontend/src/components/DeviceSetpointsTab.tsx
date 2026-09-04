@@ -92,10 +92,11 @@ export default function DeviceSetpointsTab() {
 
   const handleSave = (sp: any) => {
     const { min_value, max_value, enabled, email_notify } = editValues[sp.id] || sp;
+    const bound = ALERT_TYPES.find((t) => t.value === sp.alert_type)?.bound;
     updateMutation.mutate({
       id: sp.id,
-      min_value: min_value !== '' ? parseFloat(min_value) : null,
-      max_value: max_value !== '' ? parseFloat(max_value) : null,
+      min_value: bound === 'min' && min_value !== '' ? parseFloat(min_value) : null,
+      max_value: bound === 'max' && max_value !== '' ? parseFloat(max_value) : null,
       enabled: enabled ?? true,
       email_notify: email_notify ?? true,
     });
@@ -106,8 +107,8 @@ export default function DeviceSetpointsTab() {
     createMutation.mutate({
       meter_id: selectedMeter,
       alert_type: newSp.alert_type,
-      min_value: newSp.min_value !== '' ? parseFloat(newSp.min_value) : null,
-      max_value: newSp.max_value !== '' ? parseFloat(newSp.max_value) : null,
+      min_value: newSpMeta?.bound === 'min' && newSp.min_value !== '' ? parseFloat(newSp.min_value) : null,
+      max_value: newSpMeta?.bound === 'max' && newSp.max_value !== '' ? parseFloat(newSp.max_value) : null,
       enabled: newSp.enabled,
       email_notify: newSp.email_notify,
     });
@@ -143,14 +144,18 @@ export default function DeviceSetpointsTab() {
                     <td className="px-4 py-3 text-gray-800 dark:text-gray-200 text-xs">{meterName(sp.meter_id)}</td>
                     <td className="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{alertLabel(sp.alert_type)}</td>
                     <td className="px-4 py-3">
-                      {editingId === sp.id ? (
+                      {ALERT_TYPES.find((t) => t.value === sp.alert_type)?.bound !== 'min' ? (
+                        <span className="text-gray-400 dark:text-gray-600" title="Not evaluated for this alert type">n/a</span>
+                      ) : editingId === sp.id ? (
                         <input type="number" step="any" className="input py-1 text-xs w-24"
                           value={editValues[sp.id]?.min_value ?? sp.min_value ?? ''}
                           onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], min_value: e.target.value } })} />
                       ) : <span className="text-gray-600 dark:text-gray-400">{sp.min_value ?? '—'}</span>}
                     </td>
                     <td className="px-4 py-3">
-                      {editingId === sp.id ? (
+                      {ALERT_TYPES.find((t) => t.value === sp.alert_type)?.bound !== 'max' ? (
+                        <span className="text-gray-400 dark:text-gray-600" title="Not evaluated for this alert type">n/a</span>
+                      ) : editingId === sp.id ? (
                         <input type="number" step="any" className="input py-1 text-xs w-24"
                           value={editValues[sp.id]?.max_value ?? sp.max_value ?? ''}
                           onChange={e => setEditValues({ ...editValues, [sp.id]: { ...editValues[sp.id], max_value: e.target.value } })} />
@@ -224,19 +229,19 @@ export default function DeviceSetpointsTab() {
                     {availableTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
-                {newSpMeta?.bound !== 'none' && (
-                  <>
-                    <div>
-                      <label className="label">Min Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
-                      <input type="number" step="any" className="input text-sm" placeholder={newSpMeta?.bound === 'min' ? 'required' : 'optional'}
-                        value={newSp.min_value} onChange={e => setNewSp({ ...newSp, min_value: e.target.value })} />
-                    </div>
-                    <div>
-                      <label className="label">Max Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
-                      <input type="number" step="any" className="input text-sm" placeholder={newSpMeta?.bound === 'max' ? 'required' : 'optional'}
-                        value={newSp.max_value} onChange={e => setNewSp({ ...newSp, max_value: e.target.value })} />
-                    </div>
-                  </>
+                {newSpMeta?.bound === 'min' && (
+                  <div>
+                    <label className="label">Min Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
+                    <input type="number" step="any" className="input text-sm" placeholder="required"
+                      value={newSp.min_value} onChange={e => setNewSp({ ...newSp, min_value: e.target.value })} />
+                  </div>
+                )}
+                {newSpMeta?.bound === 'max' && (
+                  <div>
+                    <label className="label">Max Value {newSpMeta?.unit && `(${newSpMeta.unit})`}</label>
+                    <input type="number" step="any" className="input text-sm" placeholder="required"
+                      value={newSp.max_value} onChange={e => setNewSp({ ...newSp, max_value: e.target.value })} />
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-4">
@@ -280,7 +285,9 @@ export default function DeviceSetpointsTab() {
                     <tr key={sp.id} className="border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20">
                       <td className="px-4 py-3 text-gray-800 dark:text-gray-200 font-medium">{sp.alert_type.replace(/_/g, ' ')}</td>
                       <td className="px-4 py-3">
-                        {editingId === sp.id && sp.source === 'device' ? (
+                        {ALERT_TYPES.find((t) => t.value === sp.alert_type)?.bound !== 'min' ? (
+                          <span className="text-gray-400 dark:text-gray-600" title="Not evaluated for this alert type">n/a</span>
+                        ) : editingId === sp.id && sp.source === 'device' ? (
                           <input
                             type="number"
                             step="any"
@@ -293,7 +300,9 @@ export default function DeviceSetpointsTab() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {editingId === sp.id && sp.source === 'device' ? (
+                        {ALERT_TYPES.find((t) => t.value === sp.alert_type)?.bound !== 'max' ? (
+                          <span className="text-gray-400 dark:text-gray-600" title="Not evaluated for this alert type">n/a</span>
+                        ) : editingId === sp.id && sp.source === 'device' ? (
                           <input
                             type="number"
                             step="any"

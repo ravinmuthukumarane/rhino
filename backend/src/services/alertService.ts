@@ -77,7 +77,14 @@ export async function checkAndAlert(reading: EnergyReading, io: Server): Promise
   if (sp.low_voltage?.min_value != null && avgV < sp.low_voltage.min_value)
     alerts.push({ alert_type: 'low_voltage', severity: 'warning', message: `Low voltage: ${avgV.toFixed(1)}V (min: ${sp.low_voltage.min_value}V)`, value: avgV, setpoint_value: sp.low_voltage.min_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
 
-  const pf = typeof reading.power_factor === 'string' ? parseFloat(reading.power_factor) : (reading.power_factor ?? 1);
+  // PF/cos φ is a *signed* register on this hardware (negative = leading/
+  // capacitive, positive = lagging/inductive - see script/mqtt.md, Circutor
+  // CVM-C11 map) - comparing the raw signed value against a magnitude
+  // threshold like 0.85 made every leading reading (e.g. -0.95, actually a
+  // very good PF) compare as "low" regardless of how good it really was.
+  // The threshold is about magnitude/quality, so compare the absolute value.
+  const pfRaw = typeof reading.power_factor === 'string' ? parseFloat(reading.power_factor) : (reading.power_factor ?? 1);
+  const pf = Math.abs(pfRaw);
   if (sp.low_power_factor?.min_value != null && pf < sp.low_power_factor.min_value)
     alerts.push({ alert_type: 'low_power_factor', severity: 'warning', message: `Low power factor: ${pf.toFixed(3)} (min: ${sp.low_power_factor.min_value})`, value: pf, setpoint_value: sp.low_power_factor.min_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
 

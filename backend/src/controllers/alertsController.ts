@@ -2,6 +2,16 @@ import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
 
+// Which bound each alert type is actually evaluated against in
+// alertService.ts - the API previously accepted and stored whatever the
+// caller sent for the other field with no validation, but alertService
+// silently never checks it (e.g. a "max" saved against low_power_factor
+// looked like a working upper-limit alarm but could never fire).
+const BOUNDS: Record<string, 'min' | 'max' | 'none'> = {
+  over_voltage: 'max', low_voltage: 'min', low_power_factor: 'min',
+  high_kva: 'max', power_interruption: 'none',
+};
+
 export async function getAlerts(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { from, to, type, acknowledged, plant_id, limit = '100' } = req.query as Record<string, string>;
   try {
@@ -73,11 +83,12 @@ export async function getSetpoints(_req: AuthRequest, res: Response, next: NextF
 export async function updateSetpoint(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { alertType } = req.params;
   const { min_value, max_value, enabled, email_notify } = req.body as Record<string, any>;
+  const bound = BOUNDS[alertType];
   try {
     const { rows: [sp] } = await pool.query(
       `UPDATE alert_setpoints SET min_value=$1, max_value=$2, enabled=$3, email_notify=$4,
        updated_by=$5, updated_at=NOW() WHERE alert_type=$6 RETURNING *`,
-      [min_value ?? null, max_value ?? null, enabled ?? true, email_notify ?? true, req.user!.id, alertType]
+      [bound === 'min' ? (min_value ?? null) : null, bound === 'max' ? (max_value ?? null) : null, enabled ?? true, email_notify ?? true, req.user!.id, alertType]
     );
     if (!sp) { res.status(404).json({ error: 'Setpoint not found' }); return; }
     res.json({ setpoint: sp });

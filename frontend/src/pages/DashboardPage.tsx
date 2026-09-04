@@ -153,7 +153,9 @@ function SectionColumn({ meterReadings, energyReadings, historyMeterId, selected
   const avgI = e ? ((+e.current_r + +e.current_y + +e.current_b) / 3).toFixed(1) : null;
 
   const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
-  const pfColor = !e?.power_factor ? 'primary' : +e.power_factor < 0.80 ? 'red' : +e.power_factor < 0.85 ? 'yellow' : 'green';
+  // PF is signed on this hardware (negative = leading) - a leading -0.95 is
+  // as good as a lagging 0.95, so color by magnitude, not the raw signed value.
+  const pfColor = !e?.power_factor ? 'primary' : Math.abs(+e.power_factor) < 0.80 ? 'red' : Math.abs(+e.power_factor) < 0.85 ? 'yellow' : 'green';
 
   return (
     <div className="space-y-5">
