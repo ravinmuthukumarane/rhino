@@ -6,7 +6,7 @@ import { AuthRequest } from '../types';
 export async function generateReport(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   const { type, period_start, period_end, format = 'excel', plant_id, meter_id, plant_section } = req.body as Record<string, string>;
   const validTypes = ['energy_daily','energy_monthly','diesel_daily','diesel_monthly',
-                      'power_quality','power_interruption','consumption_summary'];
+                      'power_quality','power_interruption','consumption_summary','all_combined'];
   if (!validTypes.includes(type)) { res.status(400).json({ error: 'Invalid report type' }); return; }
   if (!['excel','pdf'].includes(format)) { res.status(400).json({ error: 'Format must be excel or pdf' }); return; }
   try {
@@ -40,7 +40,7 @@ export async function getReportHistory(req: AuthRequest, res: Response, next: Ne
 }
 
 const REPORT_TYPES = ['energy_daily','energy_monthly','diesel_daily','diesel_monthly',
-                      'power_quality','power_interruption','consumption_summary'];
+                      'power_quality','power_interruption','consumption_summary','all_combined'];
 
 export async function getReportSchedules(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {

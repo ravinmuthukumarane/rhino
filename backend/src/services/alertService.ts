@@ -48,7 +48,25 @@ async function insertAlert(data: Partial<Alert>): Promise<Alert> {
     [data.alert_type, data.severity, data.message, data.value ?? null, data.setpoint_value ?? null,
      data.source ?? null, data.plant_id ?? null, data.meter_id ?? null]
   );
+  alert.plant_section = await resolveSection(alert.meter_id);
   return alert;
+}
+
+// alerts don't store plant_section themselves - it's derived from whichever
+// device registry owns the meter_id (energy meter, flow meter, or generator,
+// e.g. power_interruption/power_restored alerts carry a generator_id like
+// "GEN-P1" instead of an energy_meters.meter_id).
+async function resolveSection(meterId?: string | null): Promise<string | null> {
+  if (!meterId) return null;
+  const { rows } = await pool.query(
+    `SELECT COALESCE(em.plant_section, fm.plant_section, g.plant_section) AS plant_section
+     FROM (SELECT $1::text AS meter_id) x
+     LEFT JOIN energy_meters em ON em.meter_id = x.meter_id
+     LEFT JOIN flow_meters fm ON fm.meter_id = x.meter_id
+     LEFT JOIN generators g ON g.generator_id = x.meter_id`,
+    [meterId]
+  );
+  return rows[0]?.plant_section ?? null;
 }
 
 async function canEmail(alertType: string): Promise<boolean> {

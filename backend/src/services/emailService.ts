@@ -80,6 +80,9 @@ async function sendPasswordReset(email: string, name: string, token: string): Pr
     <p style="color:#6b7280;font-size:13px;margin-top:16px;">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>`, '#dc2626'));
 }
 
+const SECTION_LABELS: Record<string, string> = { P1: 'Plant 1', P4: 'Plant 4' };
+const sectionLabel = (section?: string | null) => (section && SECTION_LABELS[section]) || section || 'Unknown';
+
 async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
   if (!adminEmails.length) return;
   const color = { warning: '#f59e0b', critical: '#dc2626', info: '#3b82f6' }[alert.severity] ?? '#6b7280';
@@ -92,6 +95,8 @@ async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
     <p style="display:inline-block;padding:2px 10px;border-radius:999px;background:${color}1a;color:${color};font-size:12px;font-weight:bold;text-transform:uppercase;letter-spacing:0.4px;margin:0 0 12px;">${alert.severity}</p>
     <p>${alert.message}</p>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-top:8px;">
+      ${row('Plant', sectionLabel(alert.plant_section))}
+      ${row('Device', alert.meter_id ?? 'Unknown')}
       ${row('Value', alert.value ?? 'N/A')}
       ${row('Setpoint', alert.setpoint_value ?? 'N/A')}
       ${row('Time', `${formatISTDateTime(new Date())} IST`)}

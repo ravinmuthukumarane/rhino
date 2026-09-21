@@ -78,7 +78,11 @@ export default function Header() {
                       <div className="flex-1 min-w-0">
                         <div className={`text-xs font-medium mb-0.5 ${a.severity === 'critical' ? 'text-red-600 dark:text-red-400' : a.severity === 'warning' ? 'text-yellow-600 dark:text-yellow-400' : 'text-blue-600 dark:text-blue-400'}`}>
                           {a.alert_type.replace(/_/g, ' ').toUpperCase()}
-                          {a.plant_name && <span className="ml-1 text-gray-500 font-normal">({a.plant_name})</span>}
+                          {(a.plant_section === 'P1' || a.plant_section === 'P4') && (
+                            <span className="ml-1 text-gray-500 font-normal">
+                              ({a.plant_section === 'P1' ? 'Plant 1' : 'Plant 4'}{a.meter_id ? ` — ${a.meter_id}` : ''})
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-gray-700 dark:text-gray-300 truncate">{a.message}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{fmt.datetime(a.created_at)}</p>

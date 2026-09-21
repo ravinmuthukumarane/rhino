@@ -16,10 +16,14 @@ export async function getAlerts(req: AuthRequest, res: Response, next: NextFunct
   const { from, to, type, acknowledged, plant_id, limit = '100' } = req.query as Record<string, string>;
   try {
     const { rows } = await pool.query(
-      `SELECT a.*, u.name AS acknowledged_by_name, p.name AS plant_name
+      `SELECT a.*, u.name AS acknowledged_by_name, p.name AS plant_name,
+              COALESCE(em.plant_section, fm.plant_section, g.plant_section) AS plant_section
        FROM alerts a
        LEFT JOIN users u ON u.id = a.acknowledged_by
        LEFT JOIN plants p ON p.id = a.plant_id
+       LEFT JOIN energy_meters em ON em.meter_id = a.meter_id
+       LEFT JOIN flow_meters fm ON fm.meter_id = a.meter_id
+       LEFT JOIN generators g ON g.generator_id = a.meter_id
        WHERE ($1::timestamptz IS NULL OR a.created_at >= $1)
          AND ($2::timestamptz IS NULL OR a.created_at <= $2)
          AND ($3::text IS NULL OR a.alert_type = $3)
@@ -38,8 +42,13 @@ export async function getActiveAlerts(req: AuthRequest, res: Response, next: Nex
   const { plant_id } = req.query as { plant_id?: string };
   try {
     const { rows } = await pool.query(
-      `SELECT a.*, p.name AS plant_name FROM alerts a
+      `SELECT a.*, p.name AS plant_name,
+              COALESCE(em.plant_section, fm.plant_section, g.plant_section) AS plant_section
+       FROM alerts a
        LEFT JOIN plants p ON p.id = a.plant_id
+       LEFT JOIN energy_meters em ON em.meter_id = a.meter_id
+       LEFT JOIN flow_meters fm ON fm.meter_id = a.meter_id
+       LEFT JOIN generators g ON g.generator_id = a.meter_id
        WHERE a.acknowledged = false AND ($1::uuid IS NULL OR a.plant_id = $1)
        ORDER BY a.created_at DESC LIMIT 50`,
       [plant_id ?? null]

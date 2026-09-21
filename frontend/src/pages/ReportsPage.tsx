@@ -14,6 +14,7 @@ const REPORTS = [
   { value: 'power_quality',       label: 'Power Quality Report' },
   { value: 'power_interruption',  label: 'Power Interruption Report' },
   { value: 'consumption_summary', label: 'Full Consumption Summary' },
+  { value: 'all_combined',        label: 'All Reports (multi-tab)' },
 ];
 
 const SECTIONS = [

@@ -139,6 +139,7 @@ export interface Alert {
   source?: PowerSource;
   plant_id?: string;
   plant_name?: string;
+  plant_section?: string | null;
   meter_id?: string;
   acknowledged: boolean;
   acknowledged_by?: string;

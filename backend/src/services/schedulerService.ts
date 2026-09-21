@@ -9,7 +9,7 @@ const REPORT_LABELS: Record<string, string> = {
   energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
   diesel_daily: 'Daily Diesel Consumption', diesel_monthly: 'Monthly Diesel Consumption',
   power_quality: 'Power Quality', power_interruption: 'Power Interruption',
-  consumption_summary: 'Consumption Summary',
+  consumption_summary: 'Consumption Summary', all_combined: 'All Reports (multi-tab)',
 };
 
 async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void> {

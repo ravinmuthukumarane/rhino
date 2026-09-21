@@ -35,7 +35,7 @@ function sectionLabel(section: string | null | undefined, plantName?: string | n
 const startOfDayIST = (dateStr: string): Date => new Date(`${dateStr}T00:00:00+05:30`);
 const endOfDayExclusiveIST = (dateStr: string): Date => new Date(startOfDayIST(dateStr).getTime() + 86400000);
 
-async function buildEnergyDaily(start: string, end: string, plantId?: string, meterId?: string, section?: string): Promise<ExcelJS.Workbook> {
+async function buildEnergyDaily(start: string, end: string, plantId?: string, meterId?: string, section?: string, wb: ExcelJS.Workbook = new ExcelJS.Workbook()): Promise<ExcelJS.Workbook> {
   const { rows } = await pool.query(
     `SELECT des.*, p.name AS plant_name, em.plant_section FROM daily_energy_summary des
      LEFT JOIN plants p ON p.id = des.plant_id
@@ -47,7 +47,6 @@ async function buildEnergyDaily(start: string, end: string, plantId?: string, me
      ORDER BY em.plant_section, des.summary_date`,
     [start, end, plantId ?? null, meterId ?? null, section ?? null]
   );
-  const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Daily Energy');
   hdr(ws, ['Date','Plant','Meter','Total kWh','Max kVA','Avg PF','Avg Voltage','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh','Interruptions']);
   rows.forEach((r) => ws.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_kwh),n(r.max_kva),n(r.avg_power_factor,3),n(r.avg_voltage,1),n(r.ceb_kwh),n(r.generator_kwh),n(r.day_kwh),n(r.peak_kwh),n(r.off_peak_kwh),r.interruption_count]));
@@ -76,18 +75,17 @@ async function buildEnergyMonthly(start: string, end: string, plantId?: string, 
   return wb;
 }
 
-async function buildDiesel(start: string, end: string, groupBy: 'day'|'month', plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
+async function buildDiesel(start: string, end: string, groupBy: 'day'|'month', plantId?: string, section?: string, wb: ExcelJS.Workbook = new ExcelJS.Workbook()): Promise<ExcelJS.Workbook> {
   const { rows } = groupBy === 'month'
     ? await pool.query(`SELECT DATE_TRUNC('month',summary_date) AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, SUM(total_liters)::numeric(14,2) AS total_liters, SUM(generator_run_hours)::numeric(8,2) AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) GROUP BY DATE_TRUNC('month',summary_date),dds.plant_id,p.name,fm.plant_section,dds.meter_id ORDER BY period`, [start,end,plantId??null,section??null])
     : await pool.query(`SELECT summary_date AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, total_liters, generator_run_hours AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) ORDER BY period`, [start,end,plantId??null,section??null]);
-  const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Diesel');
   hdr(ws, ['Period','Plant','Meter','Diesel (L)','Gen Run Hours']);
   rows.forEach((r) => ws.addRow([fmtDate(r.period),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_liters),n(r.run_hours)]));
   return wb;
 }
 
-async function buildPowerQuality(start: string, end: string, plantId?: string, meterId?: string, section?: string): Promise<ExcelJS.Workbook> {
+async function buildPowerQuality(start: string, end: string, plantId?: string, meterId?: string, section?: string, wb: ExcelJS.Workbook = new ExcelJS.Workbook()): Promise<ExcelJS.Workbook> {
   const { rows } = await pool.query(
     `SELECT er.recorded_at, p.name AS plant_name, em.plant_section, er.meter_id, er.voltage_r, er.voltage_y, er.voltage_b,
             er.current_r, er.current_y, er.current_b, er.power_kw, er.power_kva, er.power_factor,
@@ -100,14 +98,13 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
      ORDER BY er.recorded_at LIMIT 50000`,
     [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, meterId??null, section??null]
   );
-  const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Power Quality');
   hdr(ws, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','Hz','Source']);
   rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,r.power_factor,r.frequency,r.source]));
   return wb;
 }
 
-async function buildInterruptions(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
+async function buildInterruptions(start: string, end: string, plantId?: string, section?: string, wb: ExcelJS.Workbook = new ExcelJS.Workbook()): Promise<ExcelJS.Workbook> {
   // pi.meter_id holds a generator_id (e.g. "GEN-P1"), not an energy_meters.meter_id,
   // so the section has to come from the generators registry, not energy_meters.
   const { rows } = await pool.query(
@@ -119,7 +116,6 @@ async function buildInterruptions(start: string, end: string, plantId?: string, 
        AND ($4::text IS NULL OR COALESCE(em.plant_section, g.plant_section)=$4) ORDER BY pi.started_at`,
     [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, section??null]
   );
-  const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Interruptions');
   hdr(ws, ['Started At','Restored At','Duration (min)','Plant','Generator Used','Notes']);
   rows.forEach((r) => ws.addRow([fmtTime(r.started_at),r.restored_at?fmtTime(r.restored_at):'Ongoing',r.duration_minutes??'N/A',sectionLabel(r.plant_section,r.plant_name),r.generator_activated?'Yes':'No',r.notes??'']));
@@ -137,6 +133,17 @@ async function buildConsumptionSummary(start: string, end: string, plantId?: str
   return wb;
 }
 
+// One workbook, one tab per report type - used for the "all reports" bundle
+// so a schedule doesn't have to pick just one report type to email.
+async function buildAllCombined(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook();
+  await buildEnergyDaily(start, end, plantId, undefined, section, wb);
+  await buildDiesel(start, end, 'day', plantId, section, wb);
+  await buildPowerQuality(start, end, plantId, undefined, section, wb);
+  await buildInterruptions(start, end, plantId, section, wb);
+  return wb;
+}
+
 async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
   const start = input.periodStart ?? getISTDateString(new Date(Date.now() - 30 * 86400000));
   const end = input.periodEnd ?? getISTDateString();
@@ -151,6 +158,7 @@ async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; f
     case 'power_quality':     wb = await buildPowerQuality(start, end, input.plantId, input.meterId, input.section); break;
     case 'power_interruption':wb = await buildInterruptions(start, end, input.plantId, input.section); break;
     case 'consumption_summary': wb = await buildConsumptionSummary(start, end, input.plantId, input.section); break;
+    case 'all_combined':       wb = await buildAllCombined(start, end, input.plantId, input.section); break;
     default: throw new Error('Unknown report type');
   }
 
@@ -174,11 +182,17 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
     doc.fontSize(12).fillColor('#374151').text(`Report: ${type.replace(/_/g,' ')}`, { align: 'center' });
     doc.fontSize(10).fillColor('#6b7280').text(`Period: ${start} — ${end}  |  Generated: ${formatISTDateTime(new Date())} IST`, { align: 'center' });
     doc.moveDown();
-    const sheet = wb.getWorksheet(1);
-    if (sheet) {
-      const left = doc.page.margins.left;
-      const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-      const pageBottom = doc.page.height - doc.page.margins.bottom;
+    const left = doc.page.margins.left;
+    const usableWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const pageBottom = doc.page.height - doc.page.margins.bottom;
+    // Multi-tab reports (e.g. all_combined) render every worksheet in turn,
+    // each starting on its own page - a single flat PDF can't show tabs.
+    wb.worksheets.forEach((sheet, sheetIdx) => {
+      if (sheetIdx > 0) doc.addPage();
+      if (wb.worksheets.length > 1) {
+        doc.fontSize(13).fillColor('#1e40af').text(sheet.name, left, doc.y);
+        doc.moveDown(0.5);
+      }
       const colCount = sheet.getRow(1).actualCellCount || sheet.columnCount;
       const colWidth = usableWidth / Math.max(colCount, 1);
       let y = doc.y;
@@ -192,7 +206,7 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
         });
         y += 14;
       });
-    }
+    });
     doc.end();
   });
 }

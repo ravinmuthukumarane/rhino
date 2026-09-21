@@ -110,7 +110,7 @@ export default function AlertsPage() {
                 : alerts.map((a) => (
                   <tr key={a.id} className={`border-b border-gray-200 dark:border-gray-800/50 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors ${!a.acknowledged && a.severity === 'critical' ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
                     <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">{fmt.datetime(a.created_at)}</td>
-                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 text-xs">{a.plant_name ?? '—'}</td>
+                    <td className="px-4 py-2.5 text-gray-700 dark:text-gray-300 text-xs">{a.plant_section === 'P1' ? 'Plant 1' : a.plant_section === 'P4' ? 'Plant 4' : '—'}</td>
                     <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs">{a.meter_id ?? '—'}</td>
                     <td className="px-4 py-2.5 text-gray-800 dark:text-gray-200 text-xs font-medium whitespace-nowrap">{a.alert_type.replace(/_/g,' ')}</td>
                     <td className="px-4 py-2.5"><span className={SEVERITY_CLS[a.severity] ?? 'badge-info'}>{a.severity}</span></td>

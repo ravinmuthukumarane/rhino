@@ -124,6 +124,7 @@ export interface Alert {
   source?: PowerSource;
   plant_id?: string;
   meter_id?: string;
+  plant_section?: string | null;
   acknowledged: boolean;
   acknowledged_by?: string;
   acknowledged_by_name?: string;
