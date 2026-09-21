@@ -108,11 +108,15 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
 }
 
 async function buildInterruptions(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
+  // pi.meter_id holds a generator_id (e.g. "GEN-P1"), not an energy_meters.meter_id,
+  // so the section has to come from the generators registry, not energy_meters.
   const { rows } = await pool.query(
-    `SELECT pi.*, p.name AS plant_name, em.plant_section FROM power_interruptions pi LEFT JOIN plants p ON p.id=pi.plant_id
+    `SELECT pi.*, p.name AS plant_name, COALESCE(em.plant_section, g.plant_section) AS plant_section
+     FROM power_interruptions pi LEFT JOIN plants p ON p.id=pi.plant_id
      LEFT JOIN energy_meters em ON em.meter_id = pi.meter_id
+     LEFT JOIN generators g ON g.generator_id = pi.meter_id
      WHERE pi.started_at >= $1 AND pi.started_at < $2 AND ($3::uuid IS NULL OR pi.plant_id=$3)
-       AND ($4::text IS NULL OR em.plant_section=$4) ORDER BY pi.started_at`,
+       AND ($4::text IS NULL OR COALESCE(em.plant_section, g.plant_section)=$4) ORDER BY pi.started_at`,
     [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, section??null]
   );
   const wb = new ExcelJS.Workbook();

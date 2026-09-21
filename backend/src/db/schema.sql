@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS generators (
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
   capacity_kva NUMERIC(10,2),
   fuel_type VARCHAR(100) DEFAULT 'diesel',
+  plant_section VARCHAR(20),             -- physical section/incomer this generator serves, e.g. "P1", "P4"
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
