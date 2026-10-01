@@ -7,12 +7,21 @@ export const numFmt = (v: any, decimals: number): string => {
     : '—';
 };
 
+// PF is signed (negative = lagging, positive = leading) - always show the
+// sign, so a leading +0.928 isn't mistaken for an unsigned magnitude.
+export const pfFmt = (v: any): string => {
+  const n = parseFloat(v);
+  if (!Number.isFinite(n)) return '—';
+  const s = numFmt(Math.abs(n), 3);
+  return n > 0 ? `+${s}` : n < 0 ? `−${s}` : s;
+};
+
 export const fmt = {
   v:  (v: any) => v != null ? `${numFmt(v, 1)} V`   : '—',
   a:  (v: any) => v != null ? `${numFmt(v, 1)} A`   : '—',
   kw: (v: any) => v != null ? `${numFmt(v, 2)} kW`  : '—',
   kva:(v: any) => v != null ? `${numFmt(v, 2)} kVA` : '—',
-  pf: (v: any) => v != null ? numFmt(v, 3)          : '—',
+  pf: (v: any) => v != null ? pfFmt(v)              : '—',
   kwh:(v: any) => v != null ? `${numFmt(v, 2)} kWh` : '—',
   lit:(v: any) => v != null ? `${numFmt(v, 2)} L`   : '—',
   hz: (v: any) => v != null ? `${numFmt(v, 2)} Hz`  : '—',

@@ -153,8 +153,8 @@ function SectionColumn({ meterReadings, energyReadings, historyMeterId, selected
   const avgI = e ? ((+e.current_r + +e.current_y + +e.current_b) / 3).toFixed(1) : null;
 
   const vColor = !avgV ? 'primary' : +avgV > 250 ? 'red' : +avgV < 200 ? 'red' : +avgV < 210 ? 'yellow' : 'primary';
-  // PF is signed on this hardware (negative = leading) - a leading -0.95 is
-  // as good as a lagging 0.95, so color by magnitude, not the raw signed value.
+  // PF is signed (negative = lagging, positive = leading) - a lagging -0.95 is
+  // as good as a leading 0.95, so color by magnitude, not the raw signed value.
   const pfColor = !e?.power_factor ? 'primary' : Math.abs(+e.power_factor) < 0.80 ? 'red' : Math.abs(+e.power_factor) < 0.85 ? 'yellow' : 'green';
 
   return (
@@ -202,7 +202,7 @@ function SectionColumn({ meterReadings, energyReadings, historyMeterId, selected
           <MetricCard label="Avg Current" value={avgI} unit="A" color="blue" />
           <MetricCard label="Power (kW)" value={e ? numFmt(e.power_kw, 2) : null} color="green" />
           <MetricCard label="KVA (Max Demand)" value={e ? numFmt(e.power_kva, 2) : null} color="purple" />
-          <MetricCard label="Power Factor" value={e ? parseFloat(String(e.power_factor)).toFixed(3) : null} color={pfColor} />
+          <MetricCard label="Power Factor" value={e ? fmt.pf(e.power_factor) : null} color={pfColor} />
         </div>
       </div>
 

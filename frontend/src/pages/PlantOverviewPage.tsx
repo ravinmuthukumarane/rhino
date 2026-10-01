@@ -3,7 +3,7 @@ import { settingsApi, readingsApi } from '../services/api';
 import { usePlant } from '../context/PlantContext';
 import { useSocket } from '../context/SocketContext';
 import { AlertCircle, Zap, Droplets, Boxes } from 'lucide-react';
-import { numFmt } from '../utils/formatters';
+import { numFmt, pfFmt } from '../utils/formatters';
 
 // Fixed display grouping for this page, in this fixed order, replacing the
 // previous plain alphabetical listing. Matched by device name (falling back
@@ -187,7 +187,7 @@ export default function PlantOverviewPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">PF</span>
-                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? parseFloat(String(reading.power_factor)).toFixed(3) : '—'}</span>
+                <span className="text-gray-800 dark:text-gray-200 font-mono">{reading.power_factor != null ? pfFmt(reading.power_factor) : '—'}</span>
               </div>
             </div>
           ) : (

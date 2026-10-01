@@ -18,6 +18,8 @@ function hdr(sheet: ExcelJS.Worksheet, cols: string[]): void {
 function fmtDate(d: any): string { return d ? formatISTDate(d, { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''; }
 function fmtTime(d: any): string { return d ? formatISTDateTime(d) : ''; }
 function n(v: any, dp = 2): string { return v != null ? parseFloat(v).toFixed(dp) : '0.00'; }
+// PF is signed (negative = lagging, positive = leading) - always show the sign.
+function pf(v: any): string { if (v == null) return '—'; const x = parseFloat(v); return (x > 0 ? '+' : '') + x.toFixed(3); }
 
 // Reports are scoped by plant_section (P1/P4 - the actual physical plants on
 // site), not by plants.id - the site only has one plants row ("RRPL"), so
@@ -49,7 +51,7 @@ async function buildEnergyDaily(start: string, end: string, plantId?: string, me
   );
   const ws = wb.addWorksheet('Daily Energy');
   hdr(ws, ['Date','Plant','Meter','Total kWh','Max kVA','Avg PF','Avg Voltage','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh','Interruptions']);
-  rows.forEach((r) => ws.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_kwh),n(r.max_kva),n(r.avg_power_factor,3),n(r.avg_voltage,1),n(r.ceb_kwh),n(r.generator_kwh),n(r.day_kwh),n(r.peak_kwh),n(r.off_peak_kwh),r.interruption_count]));
+  rows.forEach((r) => ws.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_kwh),n(r.max_kva),pf(r.avg_power_factor),n(r.avg_voltage,1),n(r.ceb_kwh),n(r.generator_kwh),n(r.day_kwh),n(r.peak_kwh),n(r.off_peak_kwh),r.interruption_count]));
   return wb;
 }
 
@@ -71,7 +73,7 @@ async function buildEnergyMonthly(start: string, end: string, plantId?: string, 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet('Monthly Energy');
   hdr(ws, ['Month','Plant','Meter','Total kWh','Max kVA','Avg PF','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']);
-  rows.forEach((r) => ws.addRow([formatISTDate(r.month,{year:'numeric',month:'long'}),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.max_kva,r.avg_pf,r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
+  rows.forEach((r) => ws.addRow([formatISTDate(r.month,{year:'numeric',month:'long'}),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.max_kva,pf(r.avg_pf),r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
   return wb;
 }
 
@@ -100,7 +102,7 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
   );
   const ws = wb.addWorksheet('Power Quality');
   hdr(ws, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','Hz','Source']);
-  rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,r.power_factor,r.frequency,r.source]));
+  rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,pf(r.power_factor),r.frequency,r.source]));
   return wb;
 }
 

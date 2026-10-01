@@ -96,6 +96,30 @@ interface DeviceTelemetry {
 // the gateway already reports kW/kVA directly, to skip the /1000 conversion.
 const POWER_SCALE = process.env.MQTT_POWER_UNIT === 'kw' ? 1 : 0.001;
 
+// Each meter brand's gateway forwards its raw PF register, and the brands
+// disagree on what the sign means. Normalise everything to the Wattz
+// convention (negative = lagging/inductive, positive = leading/capacitive) -
+// confirmed against real traffic, where Wattz motor loads (compressors, BM
+// sections) sit steadily at -0.7..-0.85.
+//  - Circutor CVM-C11: its sign can't be trusted or derived (the same
+//    compressor loads read +0.84..+0.89, with occasional unexplained
+//    negatives, and the gateway publishes no reactive/quadrant tags to
+//    calculate lead/lag from), so report it as lagging (negative) always.
+//  - Schneider PM2120: register 3084 is the 4Q_FP_PF encoding (-2..+2), not a
+//    plain PF: 0..1 = Q1 lagging, 1..2 = Q4 leading (PF = 2 - v), -1..0 = Q2
+//    leading, -2..-1 = Q3 lagging (PF = -2 - v). Stored raw, a leading 0.928
+//    showed up as 1.072 and a normal lagging 0.84 as +0.84.
+function normalizePowerFactor(raw: number, model: string | null): number {
+  if (model === 'Circutor CVM-C11') return raw === 0 ? 0 : -Math.abs(raw);
+  if (model === 'Schneider PM2120') {
+    if (raw > 1) return 2 - raw;           // Q4 leading
+    if (raw < -1) return -(2 + raw);       // Q3 lagging
+    if (raw < 0) return -raw;              // Q2 leading
+    return raw === 0 ? 0 : -raw;           // Q1 lagging
+  }
+  return raw;
+}
+
 async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<void> {
   try {
     const deviceId = data.device_id;
@@ -135,6 +159,7 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     const currR = tags.curr_l1 ?? tags.curr_a ?? 0;
     const currY = tags.curr_l2 ?? tags.curr_b ?? currR;
     const currB = tags.curr_l3 ?? tags.curr_c ?? currR;
+    const powerFactor = normalizePowerFactor(tags.total_pf ?? 0, rows[0].model);
 
     // Insert energy reading
     const { rows: [reading] } = await pool.query(
@@ -156,7 +181,7 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
         currB,
         powerKw,
         powerKva,
-        tags.total_pf ?? 0,
+        powerFactor,
         tags.import_kwh ?? 0,
         tags.freq ?? 50,
         source,
@@ -192,7 +217,7 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
         meterId,
         dKwh,
         powerKva,
-        tags.total_pf ?? 0.9,
+        tags.total_pf != null ? powerFactor : 0.9,
         (voltR + voltY + voltB) / 3,
         cebKwh,
         genKwh,

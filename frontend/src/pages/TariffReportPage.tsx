@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import { reportsApi } from '../services/api';
-import { numFmt } from '../utils/formatters';
+import { numFmt, pfFmt } from '../utils/formatters';
 
 const SECTIONS = [
   { value: 'P1', label: 'Plant 1' },
@@ -143,7 +143,7 @@ export default function TariffReportPage() {
                       <td className="px-4 py-3">{numFmt(m.offpeak_kwh, 1)}</td>
                       <td className="px-4 py-3 font-bold text-blue-600 dark:text-blue-400">{numFmt(m.total_kwh, 1)}</td>
                       <td className="px-4 py-3">{numFmt(m.max_kva_day, 1)}</td>
-                      <td className="px-4 py-3">{numFmt(m.avg_pf, 3)}</td>
+                      <td className="px-4 py-3">{pfFmt(m.avg_pf)}</td>
                     </tr>
                   ))}
                 </tbody>

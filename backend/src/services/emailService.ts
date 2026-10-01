@@ -117,7 +117,7 @@ async function sendScheduledReport(
       <tr><td colspan="2" style="padding:8px 12px;background:#eff6ff;font-weight:bold;color:${BRAND};font-size:13px;">${s.plant_section}</td></tr>
       ${row('Total kWh', n(s.total_kwh))}
       ${row('Max kVA', n(s.max_kva))}
-      ${row('Avg Power Factor', n(s.avg_power_factor, 3))}
+      ${row('Avg Power Factor', s.avg_power_factor != null && Number(s.avg_power_factor) > 0 ? '+' + n(s.avg_power_factor, 3) : n(s.avg_power_factor, 3))}
       ${row('Avg Voltage', n(s.avg_voltage, 1))}
       ${row('CEB kWh', n(s.ceb_kwh))}
       ${row('Generator kWh', n(s.generator_kwh))}
