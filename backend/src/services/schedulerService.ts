@@ -3,7 +3,8 @@ import pool from '../config/database';
 import { reportService } from './reportService';
 import { emailService } from './emailService';
 import { plantSectionSummaryService } from './plantSectionSummaryService';
-import { getISTDateString, getISTParts, formatISTDate } from '../utils/timeUtils';
+import { getISTDateString } from '../utils/timeUtils';
+import { lastSlot, slotPeriod } from '../utils/scheduleTiming';
 import { readingsWithInterval } from '../utils/energySql';
 
 const REPORT_LABELS: Record<string, string> = {
@@ -13,26 +14,37 @@ const REPORT_LABELS: Record<string, string> = {
   consumption_summary: 'Consumption Summary', all_combined: 'All Reports (multi-tab)',
 };
 
-async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void> {
+type Frequency = 'daily' | 'monthly';
+
+// Generates and emails one schedule's report for the period belonging to
+// `slot`, and records the outcome on the schedule row (last_run_at/status/
+// message/period) so the Report Schedules page can show what happened.
+export async function runScheduledReport(frequency: Frequency, slot: Date, manual = false): Promise<{ status: string; message: string }> {
   const { rows: [sched] } = await pool.query('SELECT * FROM report_schedules WHERE frequency=$1', [frequency]);
-  if (!sched?.enabled) { console.log(`[Scheduler] ${frequency} report is disabled, skipping.`); return; }
+  if (!sched) return { status: 'failed', message: 'Schedule not found' };
 
-  const now = new Date();
-  let start: string, end: string, periodLabel: string;
-  if (frequency === 'daily') {
-    // "Yesterday" in Sri Lanka's calendar, not the server's UTC system day.
-    start = end = getISTDateString(new Date(now.getTime() - 86400000));
-    periodLabel = formatISTDate(`${start}T00:00:00+05:30`, { year: 'numeric', month: 'long', day: 'numeric' });
-  } else {
-    // Last calendar month anchored to the IST year/month, not server UTC.
-    const { year, month } = getISTParts(now); // month is 1-indexed
-    start = new Date(Date.UTC(year, month - 2, 1)).toISOString().split('T')[0];
-    end = new Date(Date.UTC(year, month - 1, 0)).toISOString().split('T')[0];
-    periodLabel = formatISTDate(`${start}T00:00:00+05:30`, { year: 'numeric', month: 'long' });
-  }
+  const { start, end, label: periodLabel } = slotPeriod(frequency, slot);
+  const record = async (status: string, message: string) => {
+    // A manual "send now" doesn't consume the scheduled slot - only stamp
+    // last_run_at for real scheduled runs, so the next automatic send still
+    // happens on time.
+    await pool.query(
+      `UPDATE report_schedules SET last_status=$1, last_message=$2, last_period=$3${manual ? '' : ', last_run_at=$5'} WHERE frequency=$4`,
+      manual ? [status, `${message} (sent manually)`, periodLabel, frequency] : [status, message, periodLabel, frequency, slot]
+    );
+    return { status, message };
+  };
 
-  console.log(`[Scheduler] Generating ${frequency} report (${sched.report_type}, ${sched.format})…`);
+  console.log(`[Scheduler] Generating ${frequency} report (${sched.report_type}, ${sched.format}) for ${periodLabel}…`);
   try {
+    // Make sure the reported day's totals are final before they're emailed.
+    if (frequency === 'daily') await recalcDailySummary(start);
+
+    const { rows } = await pool.query('SELECT email FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email', [frequency]);
+    const emails = rows.map((r: { email: string }) => r.email);
+    if (!emails.length) return record('skipped', 'No recipients');
+    if (!process.env.SMTP_USER) return record('skipped', 'Email (SMTP) not configured on the server');
+
     const { buffer, filename, contentType } = await reportService.generate({
       type: sched.report_type, periodStart: start, periodEnd: end, format: sched.format,
       plantId: sched.plant_id ?? undefined, section: sched.plant_section ?? undefined,
@@ -40,21 +52,53 @@ async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void>
     });
 
     await pool.query(
-      'INSERT INTO reports (report_type,period_start,period_end,format,file_name,plant_id,plant_section,auto_generated) VALUES ($1,$2,$3,$4,$5,$6,$7,true)',
+      'INSERT INTO reports (report_type,period_start,period_end,format,file_name,plant_id,plant_section,auto_generated,email_sent) VALUES ($1,$2,$3,$4,$5,$6,$7,true,true)',
       [sched.report_type, start, end, sched.format, filename, sched.plant_id ?? null, sched.plant_section ?? null]
     );
 
-    const { rows } = await pool.query(
-      'SELECT email FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email',
-      [frequency]
-    );
-    const emails = rows.map((r: { email: string }) => r.email);
     const sections = await plantSectionSummaryService.getSectionSummaries(start, end);
     const plantLabel = sched.plant_section === 'P1' ? 'Plant 1' : sched.plant_section === 'P4' ? 'Plant 4' : (sched.plant_section || 'All Plants (Plant 1 + Plant 4)');
     const label = `${REPORT_LABELS[sched.report_type] ?? sched.report_type} – ${plantLabel}`;
     await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections);
-    if (emails.length) console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
-  } catch (err) { console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message); }
+    console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
+    return record('sent', `Sent to ${emails.length} recipient${emails.length > 1 ? 's' : ''}`);
+  } catch (err) {
+    console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message);
+    return record('failed', (err as Error).message);
+  }
+}
+
+// Slots that were missed (e.g. server down at send time) are still sent if
+// the server comes back within this window; older ones are skipped rather
+// than surprising recipients with a stale report.
+const CATCH_UP_MS = 12 * 3600000;
+let checking = false;
+
+// Runs every minute: fires each enabled schedule whose most recent slot
+// hasn't been processed yet. Slots before the schedule was last saved don't
+// count, so changing the day/time never triggers an immediate send for a
+// slot that's already in the past.
+async function checkDueSchedules(): Promise<void> {
+  if (checking) return;
+  checking = true;
+  try {
+    const now = new Date();
+    const { rows } = await pool.query('SELECT * FROM report_schedules WHERE enabled = true');
+    for (const s of rows) {
+      const slot = lastSlot({ frequency: s.frequency, send_day: s.send_day, send_time: s.send_time }, now);
+      const alreadyRun = s.last_run_at && new Date(s.last_run_at) >= slot;
+      const savedAfterSlot = s.updated_at && new Date(s.updated_at) > slot;
+      if (alreadyRun || savedAfterSlot || now.getTime() - slot.getTime() > CATCH_UP_MS) continue;
+      // Claim the slot before the (slow) generate/send so an overlapping
+      // check can't send it twice.
+      await pool.query('UPDATE report_schedules SET last_run_at=$1 WHERE frequency=$2', [slot, s.frequency]);
+      await runScheduledReport(s.frequency, slot);
+    }
+  } catch (err) {
+    console.error('[Scheduler] Schedule check failed:', (err as Error).message);
+  } finally {
+    checking = false;
+  }
 }
 
 // Rebuilds daily_energy_summary for one IST calendar day from the raw
@@ -89,11 +133,9 @@ export async function recalcDailySummary(date: string): Promise<number> {
 }
 
 export function startScheduler(): void {
-  // Auto monthly report on 1st of each month at 06:00
-  cron.schedule('0 6 1 * *', () => runScheduledReport('monthly'));
-
-  // Auto daily report at 00:10 (after the 00:05 summary recalc below has run)
-  cron.schedule('10 0 * * *', () => runScheduledReport('daily'));
+  // Daily/monthly report emails - day and time are configured per schedule
+  // on the Report Schedules page, so check every minute which are due.
+  cron.schedule('* * * * *', () => { checkDueSchedules(); });
 
   // Daily summary recalc at 00:05
   cron.schedule('5 0 * * *', async () => {

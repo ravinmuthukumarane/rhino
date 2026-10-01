@@ -42,8 +42,8 @@ VALUES ('GEN-01', 'Diesel Generator 1', '00000000-0000-0000-0000-000000000001', 
 ON CONFLICT (generator_id) DO NOTHING;
 
 -- Default report schedules (daily off by default, monthly on to match prior behavior)
-INSERT INTO report_schedules (frequency, enabled, report_type, format)
+INSERT INTO report_schedules (frequency, enabled, report_type, format, send_day, send_time)
 VALUES
-  ('daily',   false, 'consumption_summary', 'excel'),
-  ('monthly', true,  'consumption_summary', 'excel')
+  ('daily',   false, 'consumption_summary', 'excel', 1, '00:10'),
+  ('monthly', true,  'consumption_summary', 'excel', 1, '06:00')
 ON CONFLICT (frequency) DO NOTHING;

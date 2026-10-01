@@ -76,6 +76,7 @@ export const reportsApi = {
   getHistory: () => api.get('/reports/history'),
   getSchedules: () => api.get('/reports/schedules'),
   updateSchedule: (frequency: string, data: object) => api.put(`/reports/schedules/${frequency}`, data),
+  sendScheduleNow: (frequency: string) => api.post(`/reports/schedules/${frequency}/send-now`),
   getScheduleRecipients: (frequency: string) => api.get(`/reports/schedules/${frequency}/recipients`),
   addScheduleRecipient: (frequency: string, data: { email: string; name?: string }) =>
     api.post(`/reports/schedules/${frequency}/recipients`, data),

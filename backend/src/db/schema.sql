@@ -340,6 +340,12 @@ CREATE TABLE IF NOT EXISTS report_schedules (
   format VARCHAR(20) NOT NULL DEFAULT 'excel' CHECK (format IN ('excel', 'pdf')),
   plant_id UUID REFERENCES plants(id) ON DELETE SET NULL,
   plant_section VARCHAR(20),           -- 'P1'/'P4'/etc, or NULL for all sections
+  send_day SMALLINT NOT NULL DEFAULT 1 CHECK (send_day BETWEEN 1 AND 28), -- monthly only: day of month (IST)
+  send_time TIME NOT NULL DEFAULT '06:00',  -- IST time of day the email goes out
+  last_run_at TIMESTAMPTZ,             -- last scheduled slot that was processed
+  last_status VARCHAR(20),             -- 'sent' | 'failed' | 'skipped'
+  last_message TEXT,
+  last_period VARCHAR(100),            -- human-readable period the last run covered
   updated_by UUID REFERENCES users(id),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

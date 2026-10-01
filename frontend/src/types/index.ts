@@ -44,6 +44,25 @@ export interface MonitoredDevice {
   offline: boolean;
 }
 
+export interface ReportSchedule {
+  frequency: 'daily' | 'monthly';
+  enabled: boolean;
+  report_type: string;
+  format: 'excel' | 'pdf';
+  plant_id: string | null;
+  plant_section: string | null;
+  send_day: number;
+  send_time: string; // 'HH:MM' IST
+  last_run_at: string | null;
+  last_status: 'sent' | 'failed' | 'skipped' | null;
+  last_message: string | null;
+  last_period: string | null;
+  next_send_at: string | null;
+  recipient_count: number;
+  updated_at: string | null;
+  updated_by_name: string | null;
+}
+
 export interface ReportScheduleRecipient {
   id: string;
   frequency: 'daily' | 'monthly';
