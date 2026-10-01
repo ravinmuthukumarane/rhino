@@ -41,7 +41,7 @@ async function getAdminEmails(): Promise<string[]> {
   return rows.map((r: { email: string }) => r.email);
 }
 
-async function insertAlert(data: Partial<Alert>): Promise<Alert> {
+export async function insertAlert(data: Partial<Alert>): Promise<Alert> {
   const { rows: [alert] } = await pool.query<Alert>(
     `INSERT INTO alerts (alert_type, severity, message, value, setpoint_value, source, plant_id, meter_id)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,

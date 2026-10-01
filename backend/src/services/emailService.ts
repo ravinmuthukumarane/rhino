@@ -2,6 +2,7 @@ import transporter from '../config/email';
 import { Alert } from '../types';
 import { SectionSummary } from './plantSectionSummaryService';
 import { formatISTDateTime } from '../utils/timeUtils';
+import type { MonitoredDevice } from './deviceMonitorService';
 
 const FROM = process.env.EMAIL_FROM ?? 'Energy Monitor <noreply@example.com>';
 const UI = process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -137,4 +138,41 @@ async function sendScheduledReport(
   });
 }
 
-export const emailService = { sendVerification, sendInvite, sendPasswordReset, sendAlert, sendScheduledReport };
+// One email per monitor check, listing every device that dropped and/or came
+// back in that check - a gateway or broker outage takes down many devices at
+// once, and that should be one email, not thirty.
+async function sendDeviceStatusAlert(
+  emails: string[], offline: MonitoredDevice[], online: MonitoredDevice[], thresholdMin: number
+): Promise<void> {
+  if (!emails.length) { console.log('[EMAIL SKIPPED] device status alert - no recipients'); return; }
+  if (!offline.length && !online.length) return;
+  const ts = (v: string | null) => v ? `${formatISTDateTime(new Date(v))} IST` : 'Never';
+  const table = (devices: MonitoredDevice[], timeLabel: string, timeOf: (d: MonitoredDevice) => string) => `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 18px;">
+      <tr>
+        ${['Plant', 'Device', 'Type', 'Device ID', timeLabel].map((h) => `<td style="padding:8px 10px;background:#f9fafb;border-bottom:1px solid #e5e7eb;color:#6b7280;font-size:12px;font-weight:bold;">${h}</td>`).join('')}
+      </tr>
+      ${devices.map((d) => `<tr>
+        ${[sectionLabel(d.plant_section), d.name, d.kind, d.device_id, timeOf(d)].map((v) => `<td style="padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;">${v}</td>`).join('')}
+      </tr>`).join('')}
+    </table>`;
+
+  const red = '#dc2626';
+  const parts: string[] = [];
+  if (offline.length) parts.push(`
+    <p><b>${offline.length}</b> device${offline.length > 1 ? 's have' : ' has'} sent no data for more than ${thresholdMin} minutes:</p>
+    ${table(offline, 'Last Seen', (d) => ts(d.last_seen_at))}`);
+  if (online.length) parts.push(`
+    <p><b>${online.length}</b> device${online.length > 1 ? 's are' : ' is'} back online:</p>
+    ${table(online, 'Offline Since', (d) => ts(d.offline_since))}`);
+
+  const subject = offline.length
+    ? `[CRITICAL] ${offline.length} device${offline.length > 1 ? 's' : ''} offline${offline.length === 1 ? ` - ${offline[0].name}` : ''} – Energy Monitor`
+    : `[INFO] ${online.length} device${online.length > 1 ? 's' : ''} back online – Energy Monitor`;
+  await send(emails.join(','), subject, layout(offline.length ? 'Device offline' : 'Device back online', `
+    ${parts.join('')}
+    <p style="color:#6b7280;font-size:13px;">Checked at ${formatISTDateTime(new Date())} IST.</p>
+    ${button('View Device Status', `${UI}/device-monitor`, offline.length ? red : BRAND)}`, offline.length ? red : '#16a34a'));
+}
+
+export const emailService = { sendVerification, sendInvite, sendPasswordReset, sendAlert, sendScheduledReport, sendDeviceStatusAlert };

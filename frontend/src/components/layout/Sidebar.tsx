@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Zap, LayoutDashboard, Bell, FileText, Settings, Users, LogOut, Wifi, WifiOff, Factory, Mail } from 'lucide-react';
+import { Zap, LayoutDashboard, Bell, FileText, Settings, Users, LogOut, Wifi, WifiOff, Factory, Mail, Activity } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
 
@@ -14,6 +14,7 @@ const navItems = [
   { to: '/device-settings', icon: Factory, label: 'Device Settings', adminOnly: true },
   { to: '/users', icon: Users, label: 'Users', adminOnly: true },
   { to: '/report-schedules', icon: Mail, label: 'Report Schedules', adminOnly: true },
+  { to: '/device-monitor', icon: Activity, label: 'Device Monitor', adminOnly: true },
 ];
 
 export default function Sidebar() {

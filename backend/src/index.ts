@@ -17,6 +17,8 @@ import enhancedRoutes from './routes/enhanced';
 import { startSimulator } from './services/simulatorService';
 import { startMQTT } from './services/mqttService';
 import { startScheduler } from './services/schedulerService';
+import { startDeviceMonitor } from './services/deviceMonitorService';
+import deviceMonitorRoutes from './routes/deviceMonitor';
 
 const app = express();
 const server = http.createServer(app);
@@ -33,6 +35,7 @@ app.use('/api/readings', readingsRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/device-monitor', deviceMonitorRoutes);
 app.use('/api', enhancedRoutes);
 
 app.get('/api/health', async (_req, res) => {
@@ -62,6 +65,9 @@ server.listen(PORT, '0.0.0.0', async () => {
 
   if (process.env.ENABLE_MQTT === 'true') {
     await startMQTT(io);
+    // Only real MQTT devices have device_ids to go silent - the simulator
+    // would make every registered device look offline.
+    startDeviceMonitor(io);
   } else if (process.env.ENABLE_SIMULATOR !== 'false') {
     await startSimulator(io);
   }

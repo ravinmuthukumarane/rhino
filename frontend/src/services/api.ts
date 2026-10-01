@@ -55,6 +55,14 @@ export const alertsApi = {
   updateSetpoint: (type: string, data: object) => api.put(`/alerts/setpoints/${type}`, data),
 };
 
+export const deviceMonitorApi = {
+  getStatus: () => api.get('/device-monitor/status'),
+  getRecipients: () => api.get('/device-monitor/recipients'),
+  addRecipient: (data: { email: string; name?: string }) => api.post('/device-monitor/recipients', data),
+  updateRecipient: (id: string, data: { email: string; name?: string }) => api.put(`/device-monitor/recipients/${id}`, data),
+  deleteRecipient: (id: string) => api.delete(`/device-monitor/recipients/${id}`),
+};
+
 export const deviceSetpointsApi = {
   getAll: () => api.get('/device-setpoints'),
   getEffective: (meterId: string) => api.get('/device-setpoints/effective', { params: { meter_id: meterId } }),

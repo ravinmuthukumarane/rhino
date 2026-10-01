@@ -21,6 +21,8 @@ const TYPE_OPTS = [
   { value: 'high_kva', label: 'High KVA' },
   { value: 'power_interruption', label: 'Power Interruption' },
   { value: 'power_restored', label: 'Power Restored' },
+  { value: 'device_offline', label: 'Device Offline' },
+  { value: 'device_online', label: 'Device Back Online' },
 ];
 
 export default function AlertsPage() {

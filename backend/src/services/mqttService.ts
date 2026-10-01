@@ -4,6 +4,7 @@ import { checkAndAlert, checkPowerSwitch } from './alertService';
 import { getTimePeriod, getISTDateString } from '../utils/timeUtils';
 import { EnergyReading, PowerSource, GeneratorStatus } from '../types';
 import { Server } from 'socket.io';
+import { markSeen } from './deviceMonitorService';
 
 interface MeterData {
   meter_id: string;
@@ -36,6 +37,8 @@ export async function startMQTT(io: Server): Promise<void> {
   mqttClient.on('message', async (_topic: string, message: Buffer) => {
     try {
       const data = JSON.parse(message.toString());
+      // Any message at all proves the device is alive, regardless of type.
+      markSeen(data.device_id);
 
       // A single shared topic carries energy, diesel, flow-meter, and power-
       // status readings. Diesel payloads use an explicit 'type' field; the

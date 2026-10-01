@@ -26,6 +26,24 @@ export interface Plant {
   created_at: string;
 }
 
+export interface OfflineAlertRecipient {
+  id: string;
+  email: string;
+  name: string | null;
+  created_at: string;
+}
+
+export interface MonitoredDevice {
+  kind: string;
+  ref_id: string;
+  name: string;
+  device_id: string;
+  plant_section: string | null;
+  last_seen_at: string | null;
+  offline_since: string | null;
+  offline: boolean;
+}
+
 export interface ReportScheduleRecipient {
   id: string;
   frequency: 'daily' | 'monthly';

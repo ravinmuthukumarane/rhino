@@ -358,6 +358,28 @@ CREATE TABLE IF NOT EXISTS report_schedule_recipients (
 CREATE INDEX IF NOT EXISTS idx_rsr_frequency ON report_schedule_recipients (frequency);
 
 -- ============================================================
+-- DEVICE OFFLINE MONITORING
+-- ============================================================
+-- Last time each MQTT device_id was heard from (any device type), and whether
+-- an offline email has already gone out for the current outage - see
+-- deviceMonitorService.ts.
+CREATE TABLE IF NOT EXISTS device_status (
+  device_id VARCHAR(50) PRIMARY KEY,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  offline_notified BOOLEAN NOT NULL DEFAULT false,
+  offline_since TIMESTAMPTZ
+);
+
+-- Who gets the device-offline/back-online emails - independent of login
+-- accounts, like report_schedule_recipients.
+CREATE TABLE IF NOT EXISTS offline_alert_recipients (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  name VARCHAR(255),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
 -- TRIGGERS
 -- ============================================================
 CREATE OR REPLACE FUNCTION update_updated_at_column()

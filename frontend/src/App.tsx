@@ -19,6 +19,7 @@ import GeneratorAnalysisPage from './pages/GeneratorAnalysisPage';
 import SetpointsPage from './pages/SetpointsPage';
 import DeviceSettingsPage from './pages/DeviceSettingsPage';
 import UsersPage from './pages/UsersPage';
+import DeviceMonitorPage from './pages/DeviceMonitorPage';
 import { ReactNode } from 'react';
 
 function Private({ children }: { children: ReactNode }) {
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="setpoints" element={<SetpointsPage />} />
         <Route path="device-settings" element={<DeviceSettingsPage />} />
         <Route path="users" element={<UsersPage />} />
+        <Route path="device-monitor" element={<DeviceMonitorPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
