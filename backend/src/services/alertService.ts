@@ -69,13 +69,33 @@ async function resolveSection(meterId?: string | null): Promise<string | null> {
   return rows[0]?.plant_section ?? null;
 }
 
-async function canEmail(alertType: string): Promise<boolean> {
+// While a condition persists, a meter re-alerts at most once per this window
+// - otherwise every reading (~every 44s) that breaks a setpoint logged its
+// own alert, which for a steady low-PF load is ~2,000 alerts per meter/day.
+const REALERT_MINUTES = 15;
+
+async function recentlyAlerted(alertType: string, meterId: string | undefined): Promise<boolean> {
   const { rows } = await pool.query(
-    "SELECT id FROM alerts WHERE alert_type=$1 AND email_sent=true AND created_at > NOW()-INTERVAL '15 minutes' LIMIT 1",
-    [alertType]
+    `SELECT 1 FROM alerts WHERE alert_type=$1 AND meter_id IS NOT DISTINCT FROM $2
+     AND created_at > NOW() - make_interval(mins => $3) LIMIT 1`,
+    [alertType, meterId ?? null, REALERT_MINUTES]
+  );
+  return rows.length > 0;
+}
+
+// Email rate limit is per meter, not per alert type site-wide - a P4 alert
+// used to silence P1's email of the same type for 15 minutes.
+async function canEmail(alertType: string, meterId: string | undefined): Promise<boolean> {
+  const { rows } = await pool.query(
+    "SELECT id FROM alerts WHERE alert_type=$1 AND meter_id IS NOT DISTINCT FROM $2 AND email_sent=true AND created_at > NOW()-INTERVAL '15 minutes' LIMIT 1",
+    [alertType, meterId ?? null]
   );
   return rows.length === 0;
 }
+
+// Below this a meter is effectively idle (machine off) and its PF reads 0 or
+// noise - PF is meaningless without load, so it isn't checked.
+const PF_MIN_LOAD_KW = 0.5;
 
 export async function checkAndAlert(reading: EnergyReading, io: Server): Promise<void> {
   await refreshSetpointCache();
@@ -96,25 +116,35 @@ export async function checkAndAlert(reading: EnergyReading, io: Server): Promise
     alerts.push({ alert_type: 'low_voltage', severity: 'warning', message: `Low voltage: ${avgV.toFixed(1)}V (min: ${sp.low_voltage.min_value}V)`, value: avgV, setpoint_value: sp.low_voltage.min_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
 
   // PF is stored *signed* (negative = lagging/inductive, positive = leading/
-  // capacitive - normalised across meter brands in mqttService.ts) -
-  // comparing the raw signed value against a magnitude threshold like 0.85
-  // made every negative reading (e.g. -0.95, actually a very good PF)
-  // compare as "low" regardless of how good it really was.
-  // The threshold is about magnitude/quality, so compare the absolute value.
+  // capacitive - normalised across meter brands in mqttService.ts), and the
+  // setpoint's sign is meaningful too - it picks which side is watched:
+  //   -0.60 -> lagging readings weaker than 0.60 alert (-0.60 < PF < 0)
+  //   +0.60 -> leading readings weaker than 0.60 alert (0 < PF < +0.60)
+  // Readings on the other side of zero aren't checked against that setpoint.
+  // (Comparing |PF| against a negative setpoint as-is, as before, could never
+  // fire: |PF| is never below -0.6.)
   const pfRaw = typeof reading.power_factor === 'string' ? parseFloat(reading.power_factor) : (reading.power_factor ?? 1);
-  const pf = Math.abs(pfRaw);
-  if (sp.low_power_factor?.min_value != null && pf < sp.low_power_factor.min_value)
-    alerts.push({ alert_type: 'low_power_factor', severity: 'warning', message: `Low power factor: ${pf.toFixed(3)} (min: ${sp.low_power_factor.min_value})`, value: pf, setpoint_value: sp.low_power_factor.min_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
+  const pfSetpoint = sp.low_power_factor?.min_value != null ? Number(sp.low_power_factor.min_value) : null;
+  const kw = typeof reading.power_kw === 'string' ? parseFloat(reading.power_kw) : (reading.power_kw ?? 0);
+  const pfBreached = pfSetpoint != null && pfSetpoint !== 0 && (
+    pfSetpoint < 0 ? (pfRaw < 0 && pfRaw > pfSetpoint) : (pfRaw > 0 && pfRaw < pfSetpoint)
+  );
+  if (pfBreached && Math.abs(kw) >= PF_MIN_LOAD_KW) {
+    const signed = (v: number) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v).toFixed(3)}`;
+    const side = pfSetpoint! < 0 ? 'lagging' : 'leading';
+    alerts.push({ alert_type: 'low_power_factor', severity: 'warning', message: `Low power factor (${side}): ${signed(pfRaw)} (limit: ${signed(pfSetpoint!)})`, value: pfRaw, setpoint_value: pfSetpoint!, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
+  }
 
   const kva = typeof reading.power_kva === 'string' ? parseFloat(reading.power_kva) : (reading.power_kva ?? 0);
   if (sp.high_kva?.max_value != null && kva > sp.high_kva.max_value)
     alerts.push({ alert_type: 'high_kva', severity: 'warning', message: `High KVA demand: ${kva.toFixed(1)} kVA (limit: ${sp.high_kva.max_value})`, value: kva, setpoint_value: sp.high_kva.max_value, source: reading.source, plant_id: reading.plant_id?.toString(), meter_id: reading.meter_id });
 
   for (const data of alerts) {
+    if (await recentlyAlerted(data.alert_type!, meterId)) continue;
     const alert = await insertAlert(data);
     io.emit('new_alert', alert);
     const setpoint = getEffectiveSetpoint(meterId, data.alert_type!);
-    if (setpoint?.email_notify && await canEmail(data.alert_type!)) {
+    if (setpoint?.email_notify && await canEmail(data.alert_type!, meterId)) {
       const emails = await getAdminEmails();
       if (emails.length) {
         emailService.sendAlert(alert, emails).catch(console.error);

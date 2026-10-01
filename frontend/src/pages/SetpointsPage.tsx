@@ -104,7 +104,7 @@ export default function SetpointsPage() {
         <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside">
           <li><strong className="text-gray-700 dark:text-gray-300">Over Voltage</strong> — Max: alert fires if avg phase voltage exceeds this</li>
           <li><strong className="text-gray-700 dark:text-gray-300">Low Voltage</strong> — Min: alert fires if avg phase voltage drops below this</li>
-          <li><strong className="text-gray-700 dark:text-gray-300">Low Power Factor</strong> — Min: alert fires if PF drops below this (0–1)</li>
+          <li><strong className="text-gray-700 dark:text-gray-300">Low Power Factor</strong> — Min: the sign matters. A negative value (e.g. −0.85) watches lagging readings and alerts when PF is between −0.85 and 0 (e.g. −0.70). A positive value (e.g. 0.85) watches leading readings and alerts when PF is between 0 and +0.85. Meters drawing under 0.5 kW (switched off) are skipped. While it stays low, each meter re-alerts at most every 15 minutes.</li>
           <li><strong className="text-gray-700 dark:text-gray-300">High KVA</strong> — Max: alert fires if apparent power exceeds this</li>
           <li><strong className="text-gray-700 dark:text-gray-300">Power Interruption</strong> — No threshold; fires on CEB→Generator switch</li>
         </ul>
