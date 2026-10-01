@@ -53,6 +53,11 @@ export default function GeneratorAnalysisPage() {
         <div className="card text-center py-8 text-gray-600 dark:text-gray-400">Loading...</div>
       ) : data ? (
         <>
+          <div className="card py-3 flex items-center gap-2">
+            <span className="text-xs uppercase tracking-wide text-gray-500">Plant</span>
+            <span className="text-base font-bold text-primary-700 dark:text-primary-300">{SECTIONS.find(s => s.value === section)?.label}</span>
+            <span className="text-sm text-gray-500 ml-auto">{from} to {to}</span>
+          </div>
           {/* Monthly Summary */}
           {data.monthly_summary && (
             <div className="grid grid-cols-4 gap-3">

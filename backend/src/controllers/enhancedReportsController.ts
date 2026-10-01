@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import pool from '../config/database';
 import { AuthRequest } from '../types';
 import { MAIN_METER_FILTER_SQL } from './readingsController';
+import { readingsWithInterval } from '../utils/energySql';
 
 // `from`/`to` arrive as plain dates (e.g. "2026-08-12") picked against Sri
 // Lanka's calendar - the server runs on UTC system time, so parsing them as
@@ -16,11 +17,8 @@ const startOfDayIST = (dateStr: string): string => new Date(`${dateStr}T00:00:00
 // selected day and silently drops the entire "to" day from the report.
 const endOfDayExclusive = (dateStr: string): string => new Date(new Date(`${dateStr}T00:00:00+05:30`).getTime() + 86400000).toISOString();
 
-// Reading -> kWh: power_kw * (reading interval in hours). Readings land every
-// 5 seconds, so the interval is 5/3600 hours - written as 5.0/3600 because
-// Postgres does integer division on two integer literals (5/3600 truncates
-// to 0), which would silently zero out every kWh total below.
-const KWH_FACTOR_SQL = '(5.0/3600)';
+// kWh = power_kw * interval_h, where interval_h is the real time each reading
+// represents - see utils/energySql.ts.
 
 // Tariff Report: Day/Peak/Off-Peak breakdown
 export async function getTariffReport(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -40,12 +38,12 @@ export async function getTariffReport(req: AuthRequest, res: Response, next: Nex
          em.meter_id,
          em.name as meter_name,
          er.time_period,
-         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh,
+         SUM(er.power_kw * er.interval_h) as period_kwh,
          MAX(er.power_kva) as max_kva,
          AVG(er.power_factor) as avg_pf,
          AVG((er.voltage_r + er.voltage_y + er.voltage_b) / 3) as avg_voltage,
          COUNT(*) as reading_count
-       FROM energy_readings er
+       FROM ${readingsWithInterval('$2', '$3')} er
        LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
        WHERE ($1::uuid IS NULL OR er.plant_id = $1)
          AND ($4::text IS NULL OR em.plant_section = $4)
@@ -137,8 +135,8 @@ export async function getGeneratorAnalysis(req: AuthRequest, res: Response, next
          (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
          er.meter_id,
          er.source,
-         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as period_kwh
-       FROM energy_readings er
+         SUM(er.power_kw * er.interval_h) as period_kwh
+       FROM ${readingsWithInterval('$2', '$3')} er
        LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
        WHERE ($1::uuid IS NULL OR er.plant_id = $1)
          AND ($4::text IS NULL OR em.plant_section = $4)
@@ -237,11 +235,11 @@ export async function getDeviceComparison(req: AuthRequest, res: Response, next:
          em.meter_id,
          em.name,
          (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
-         SUM(er.power_kw * ${KWH_FACTOR_SQL}) as total_kwh,
+         SUM(er.power_kw * er.interval_h) as total_kwh,
          AVG(er.power_factor) as avg_pf,
          MAX(er.power_kva) as max_kva,
          AVG((er.voltage_r + er.voltage_y + er.voltage_b) / 3) as avg_voltage
-       FROM energy_readings er
+       FROM ${readingsWithInterval('$2', '$3')} er
        LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
        WHERE er.meter_id = ANY($1::text[])
          AND er.recorded_at >= $2::timestamptz
@@ -272,10 +270,10 @@ export async function getConsumptionTrend(req: AuthRequest, res: Response, next:
         (er.recorded_at AT TIME ZONE 'Asia/Colombo')::date as record_date,
         em.meter_id,
         em.name,
-        SUM(er.power_kw * ${KWH_FACTOR_SQL}) as daily_kwh,
+        SUM(er.power_kw * er.interval_h) as daily_kwh,
         AVG(er.power_factor) as avg_pf,
         MAX(er.power_kva) as max_kva
-      FROM energy_readings er
+      FROM ${readingsWithInterval('$1')} er
       LEFT JOIN energy_meters em ON em.meter_id = er.meter_id
       WHERE er.recorded_at >= $1::timestamptz
     `;

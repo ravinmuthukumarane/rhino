@@ -115,7 +115,7 @@ async function sendScheduledReport(
 
   const sectionBlock = (s: SectionSummary) => `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:10px 0 18px;">
-      <tr><td colspan="2" style="padding:8px 12px;background:#eff6ff;font-weight:bold;color:${BRAND};font-size:13px;">${s.plant_section}</td></tr>
+      <tr><td colspan="2" style="padding:8px 12px;background:#eff6ff;font-weight:bold;color:${BRAND};font-size:13px;">${sectionLabel(s.plant_section)}</td></tr>
       ${row('Total kWh', n(s.total_kwh))}
       ${row('Max kVA', n(s.max_kva))}
       ${row('Avg Power Factor', s.avg_power_factor != null && Number(s.avg_power_factor) > 0 ? '+' + n(s.avg_power_factor, 3) : n(s.avg_power_factor, 3))}

@@ -4,6 +4,7 @@ import { reportService } from './reportService';
 import { emailService } from './emailService';
 import { plantSectionSummaryService } from './plantSectionSummaryService';
 import { getISTDateString, getISTParts, formatISTDate } from '../utils/timeUtils';
+import { readingsWithInterval } from '../utils/energySql';
 
 const REPORT_LABELS: Record<string, string> = {
   energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
@@ -49,10 +50,42 @@ async function runScheduledReport(frequency: 'daily' | 'monthly'): Promise<void>
     );
     const emails = rows.map((r: { email: string }) => r.email);
     const sections = await plantSectionSummaryService.getSectionSummaries(start, end);
-    const label = REPORT_LABELS[sched.report_type] ?? sched.report_type;
+    const plantLabel = sched.plant_section === 'P1' ? 'Plant 1' : sched.plant_section === 'P4' ? 'Plant 4' : (sched.plant_section || 'All Plants (Plant 1 + Plant 4)');
+    const label = `${REPORT_LABELS[sched.report_type] ?? sched.report_type} – ${plantLabel}`;
     await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections);
     if (emails.length) console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
   } catch (err) { console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message); }
+}
+
+// Rebuilds daily_energy_summary for one IST calendar day from the raw
+// readings, overwriting the incrementally-maintained live values. kWh uses the
+// real time between readings (see utils/energySql.ts), not a fixed interval.
+export async function recalcDailySummary(date: string): Promise<number> {
+  const from = new Date(`${date}T00:00:00+05:30`);
+  const to = new Date(from.getTime() + 86400000);
+  const { rows } = await pool.query(
+    `SELECT er.meter_id, (array_agg(er.plant_id))[1] AS plant_id,
+            SUM(er.power_kw*er.interval_h) AS total_kwh, MAX(er.power_kva) AS max_kva,
+            AVG(er.power_factor) AS avg_pf, AVG((er.voltage_r+er.voltage_y+er.voltage_b)/3) AS avg_v,
+            MAX(GREATEST(er.current_r,er.current_y,er.current_b)) AS max_i,
+            SUM(CASE WHEN er.source='CEB' THEN er.power_kw*er.interval_h ELSE 0 END) AS ceb_kwh,
+            SUM(CASE WHEN er.source='GENERATOR' THEN er.power_kw*er.interval_h ELSE 0 END) AS gen_kwh,
+            SUM(CASE WHEN er.time_period='day' THEN er.power_kw*er.interval_h ELSE 0 END) AS day_kwh,
+            SUM(CASE WHEN er.time_period='peak' THEN er.power_kw*er.interval_h ELSE 0 END) AS peak_kwh,
+            SUM(CASE WHEN er.time_period='off_peak' THEN er.power_kw*er.interval_h ELSE 0 END) AS off_kwh
+     FROM ${readingsWithInterval('$1', '$2')} er
+     GROUP BY er.meter_id`,
+    [from.toISOString(), to.toISOString()]
+  );
+  for (const r of rows) {
+    await pool.query(
+      `INSERT INTO daily_energy_summary (summary_date,plant_id,meter_id,total_kwh,max_kva,avg_power_factor,avg_voltage,max_current,ceb_kwh,generator_kwh,day_kwh,peak_kwh,off_peak_kwh)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       ON CONFLICT (summary_date,meter_id) DO UPDATE SET total_kwh=EXCLUDED.total_kwh,max_kva=EXCLUDED.max_kva,avg_power_factor=EXCLUDED.avg_power_factor,avg_voltage=EXCLUDED.avg_voltage,max_current=EXCLUDED.max_current,ceb_kwh=EXCLUDED.ceb_kwh,generator_kwh=EXCLUDED.generator_kwh,day_kwh=EXCLUDED.day_kwh,peak_kwh=EXCLUDED.peak_kwh,off_peak_kwh=EXCLUDED.off_peak_kwh,updated_at=NOW()`,
+      [date,r.plant_id,r.meter_id,r.total_kwh||0,r.max_kva||0,r.avg_pf||0,r.avg_v||0,r.max_i||0,r.ceb_kwh||0,r.gen_kwh||0,r.day_kwh||0,r.peak_kwh||0,r.off_kwh||0]
+    );
+  }
+  return rows.length;
 }
 
 export function startScheduler(): void {
@@ -67,31 +100,7 @@ export function startScheduler(): void {
     const date = getISTDateString(new Date(Date.now() - 86400000));
     console.log(`[Scheduler] Recalculating daily summary for ${date}…`);
     try {
-      const { rows: meters } = await pool.query(
-        "SELECT DISTINCT meter_id, plant_id FROM energy_readings WHERE (recorded_at AT TIME ZONE 'Asia/Colombo')::date = $1",
-        [date]
-      );
-      for (const { meter_id, plant_id } of meters) {
-        const { rows: [r] } = await pool.query(
-          `SELECT SUM(power_kw*(5.0/3600)) AS total_kwh, MAX(power_kva) AS max_kva,
-                  AVG(power_factor) AS avg_pf, AVG((voltage_r+voltage_y+voltage_b)/3) AS avg_v,
-                  MAX(GREATEST(current_r,current_y,current_b)) AS max_i,
-                  SUM(CASE WHEN source='CEB' THEN power_kw*(5.0/3600) ELSE 0 END) AS ceb_kwh,
-                  SUM(CASE WHEN source='GENERATOR' THEN power_kw*(5.0/3600) ELSE 0 END) AS gen_kwh,
-                  SUM(CASE WHEN time_period='day' THEN power_kw*(5.0/3600) ELSE 0 END) AS day_kwh,
-                  SUM(CASE WHEN time_period='peak' THEN power_kw*(5.0/3600) ELSE 0 END) AS peak_kwh,
-                  SUM(CASE WHEN time_period='off_peak' THEN power_kw*(5.0/3600) ELSE 0 END) AS off_kwh
-           FROM energy_readings WHERE (recorded_at AT TIME ZONE 'Asia/Colombo')::date=$1 AND meter_id=$2`, [date, meter_id]
-        );
-        if (r.total_kwh != null) {
-          await pool.query(
-            `INSERT INTO daily_energy_summary (summary_date,plant_id,meter_id,total_kwh,max_kva,avg_power_factor,avg_voltage,max_current,ceb_kwh,generator_kwh,day_kwh,peak_kwh,off_peak_kwh)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-             ON CONFLICT (summary_date,meter_id) DO UPDATE SET total_kwh=EXCLUDED.total_kwh,max_kva=EXCLUDED.max_kva,avg_power_factor=EXCLUDED.avg_power_factor,avg_voltage=EXCLUDED.avg_voltage,max_current=EXCLUDED.max_current,ceb_kwh=EXCLUDED.ceb_kwh,generator_kwh=EXCLUDED.generator_kwh,day_kwh=EXCLUDED.day_kwh,peak_kwh=EXCLUDED.peak_kwh,off_peak_kwh=EXCLUDED.off_peak_kwh,updated_at=NOW()`,
-            [date,plant_id,meter_id,r.total_kwh||0,r.max_kva||0,r.avg_pf||0,r.avg_v||0,r.max_i||0,r.ceb_kwh||0,r.gen_kwh||0,r.day_kwh||0,r.peak_kwh||0,r.off_kwh||0]
-          );
-        }
-      }
+      await recalcDailySummary(date);
       console.log('[Scheduler] Daily summary done.');
     } catch (err) { console.error('[Scheduler] Daily summary failed:', (err as Error).message); }
   });

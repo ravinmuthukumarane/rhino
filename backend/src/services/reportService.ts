@@ -7,9 +7,30 @@ import { formatISTDate, formatISTDateTime, getISTDateString } from '../utils/tim
 const HFILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
 const HFONT: Partial<ExcelJS.Font> = { color: { argb: 'FFFFFFFF' }, bold: true };
 
+// Row number of each sheet's column-header row - the PDF renderer skips the
+// title block above it (it prints its own heading) and styles that row.
+const headerRowOf = new WeakMap<ExcelJS.Worksheet, number>();
+
 function hdr(sheet: ExcelJS.Worksheet, cols: string[]): void {
   const row = sheet.addRow(cols);
   row.eachCell((cell) => { cell.fill = HFILL; cell.font = HFONT; cell.alignment = { horizontal: 'center' }; });
+  headerRowOf.set(sheet, row.number);
+}
+
+// Every report must say which plant it covers - a title block at the top of
+// each sheet, on top of the per-row Plant column.
+interface Scope { section?: string; start: string; end: string }
+function scopeLabel(section?: string): string {
+  return section ? sectionLabel(section) : 'All Plants (Plant 1 + Plant 4)';
+}
+function sheetWithTitle(wb: ExcelJS.Workbook, name: string, title: string, scope: Scope, cols: string[]): ExcelJS.Worksheet {
+  const ws = wb.addWorksheet(name);
+  ws.addRow([title]).font = { bold: true, size: 14, color: { argb: 'FF1E40AF' } };
+  ws.addRow([`Plant: ${scopeLabel(scope.section)}`]).font = { bold: true, size: 12 };
+  ws.addRow([`Period: ${scope.start} to ${scope.end}`]);
+  ws.addRow([]);
+  hdr(ws, cols);
+  return ws;
 }
 
 // The report server runs on UTC system time, so plain toLocaleDateString()/
@@ -26,8 +47,10 @@ function pf(v: any): string { if (v == null) return '—'; const x = parseFloat(
 // filtering/labeling by plant_id never distinguished P1 from P4. Falls back
 // to the plant name for any meter with no section set.
 const SECTION_LABELS: Record<string, string> = { P1: 'Plant 1', P4: 'Plant 4' };
-function sectionLabel(section: string | null | undefined, plantName?: string | null): string {
-  return (section && SECTION_LABELS[section]) || section || plantName || '';
+// A meter with no section set is labelled as such rather than falling back to
+// the plants.name ("RRPL"), which doesn't say Plant 1 or Plant 4.
+function sectionLabel(section: string | null | undefined, _plantName?: string | null): string {
+  return (section && SECTION_LABELS[section]) || section || 'Unassigned plant';
 }
 
 // `start`/`end` are plain dates (e.g. "2026-08-01") picked against Sri
@@ -46,11 +69,10 @@ async function buildEnergyDaily(start: string, end: string, plantId?: string, me
        AND ($3::uuid IS NULL OR des.plant_id = $3)
        AND ($4::text IS NULL OR des.meter_id = $4)
        AND ($5::text IS NULL OR em.plant_section = $5)
-     ORDER BY em.plant_section, des.summary_date`,
+     ORDER BY em.plant_section, des.summary_date, des.meter_id`,
     [start, end, plantId ?? null, meterId ?? null, section ?? null]
   );
-  const ws = wb.addWorksheet('Daily Energy');
-  hdr(ws, ['Date','Plant','Meter','Total kWh','Max kVA','Avg PF','Avg Voltage','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh','Interruptions']);
+  const ws = sheetWithTitle(wb, 'Daily Energy', 'Daily Energy Consumption', { section, start, end }, ['Date','Plant','Meter','Total kWh','Max kVA','Avg PF','Avg Voltage','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh','Interruptions']);
   rows.forEach((r) => ws.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_kwh),n(r.max_kva),pf(r.avg_power_factor),n(r.avg_voltage,1),n(r.ceb_kwh),n(r.generator_kwh),n(r.day_kwh),n(r.peak_kwh),n(r.off_peak_kwh),r.interruption_count]));
   return wb;
 }
@@ -67,22 +89,20 @@ async function buildEnergyMonthly(start: string, end: string, plantId?: string, 
      LEFT JOIN energy_meters em ON em.meter_id = des.meter_id
      WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR des.plant_id=$3)
        AND ($4::text IS NULL OR em.plant_section = $4)
-     GROUP BY DATE_TRUNC('month',summary_date), des.plant_id, p.name, em.plant_section, des.meter_id ORDER BY month`,
+     GROUP BY DATE_TRUNC('month',summary_date), des.plant_id, p.name, em.plant_section, des.meter_id ORDER BY em.plant_section, month, des.meter_id`,
     [start, end, plantId ?? null, section ?? null]
   );
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Monthly Energy');
-  hdr(ws, ['Month','Plant','Meter','Total kWh','Max kVA','Avg PF','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']);
+  const ws = sheetWithTitle(wb, 'Monthly Energy', 'Monthly Energy Consumption', { section, start, end }, ['Month','Plant','Meter','Total kWh','Max kVA','Avg PF','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']);
   rows.forEach((r) => ws.addRow([formatISTDate(r.month,{year:'numeric',month:'long'}),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.max_kva,pf(r.avg_pf),r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
   return wb;
 }
 
 async function buildDiesel(start: string, end: string, groupBy: 'day'|'month', plantId?: string, section?: string, wb: ExcelJS.Workbook = new ExcelJS.Workbook()): Promise<ExcelJS.Workbook> {
   const { rows } = groupBy === 'month'
-    ? await pool.query(`SELECT DATE_TRUNC('month',summary_date) AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, SUM(total_liters)::numeric(14,2) AS total_liters, SUM(generator_run_hours)::numeric(8,2) AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) GROUP BY DATE_TRUNC('month',summary_date),dds.plant_id,p.name,fm.plant_section,dds.meter_id ORDER BY period`, [start,end,plantId??null,section??null])
-    : await pool.query(`SELECT summary_date AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, total_liters, generator_run_hours AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) ORDER BY period`, [start,end,plantId??null,section??null]);
-  const ws = wb.addWorksheet('Diesel');
-  hdr(ws, ['Period','Plant','Meter','Diesel (L)','Gen Run Hours']);
+    ? await pool.query(`SELECT DATE_TRUNC('month',summary_date) AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, SUM(total_liters)::numeric(14,2) AS total_liters, SUM(generator_run_hours)::numeric(8,2) AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) GROUP BY DATE_TRUNC('month',summary_date),dds.plant_id,p.name,fm.plant_section,dds.meter_id ORDER BY fm.plant_section, period, dds.meter_id`, [start,end,plantId??null,section??null])
+    : await pool.query(`SELECT summary_date AS period, p.name AS plant_name, fm.plant_section, dds.meter_id, total_liters, generator_run_hours AS run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) ORDER BY fm.plant_section, period, dds.meter_id`, [start,end,plantId??null,section??null]);
+  const ws = sheetWithTitle(wb, 'Diesel', groupBy === 'month' ? 'Monthly Diesel Consumption' : 'Daily Diesel Consumption', { section, start, end }, ['Period','Plant','Meter','Diesel (L)','Gen Run Hours']);
   rows.forEach((r) => ws.addRow([fmtDate(r.period),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_liters),n(r.run_hours)]));
   return wb;
 }
@@ -97,11 +117,10 @@ async function buildPowerQuality(start: string, end: string, plantId?: string, m
      WHERE er.recorded_at >= $1 AND er.recorded_at < $2
        AND ($3::uuid IS NULL OR er.plant_id=$3) AND ($4::text IS NULL OR er.meter_id=$4)
        AND ($5::text IS NULL OR em.plant_section=$5)
-     ORDER BY er.recorded_at LIMIT 50000`,
+     ORDER BY em.plant_section, er.recorded_at, er.meter_id LIMIT 50000`,
     [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, meterId??null, section??null]
   );
-  const ws = wb.addWorksheet('Power Quality');
-  hdr(ws, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','Hz','Source']);
+  const ws = sheetWithTitle(wb, 'Power Quality', 'Power Quality', { section, start, end }, ['Timestamp','Plant','Meter','VR','VY','VB','IR','IY','IB','kW','kVA','PF','Hz','Source']);
   rows.forEach((r) => ws.addRow([fmtTime(r.recorded_at),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.voltage_r,r.voltage_y,r.voltage_b,r.current_r,r.current_y,r.current_b,r.power_kw,r.power_kva,pf(r.power_factor),r.frequency,r.source]));
   return wb;
 }
@@ -115,23 +134,22 @@ async function buildInterruptions(start: string, end: string, plantId?: string, 
      LEFT JOIN energy_meters em ON em.meter_id = pi.meter_id
      LEFT JOIN generators g ON g.generator_id = pi.meter_id
      WHERE pi.started_at >= $1 AND pi.started_at < $2 AND ($3::uuid IS NULL OR pi.plant_id=$3)
-       AND ($4::text IS NULL OR COALESCE(em.plant_section, g.plant_section)=$4) ORDER BY pi.started_at`,
+       AND ($4::text IS NULL OR COALESCE(em.plant_section, g.plant_section)=$4) ORDER BY COALESCE(em.plant_section, g.plant_section), pi.started_at`,
     [startOfDayIST(start), endOfDayExclusiveIST(end), plantId??null, section??null]
   );
-  const ws = wb.addWorksheet('Interruptions');
-  hdr(ws, ['Started At','Restored At','Duration (min)','Plant','Generator Used','Notes']);
-  rows.forEach((r) => ws.addRow([fmtTime(r.started_at),r.restored_at?fmtTime(r.restored_at):'Ongoing',r.duration_minutes??'N/A',sectionLabel(r.plant_section,r.plant_name),r.generator_activated?'Yes':'No',r.notes??'']));
+  const ws = sheetWithTitle(wb, 'Interruptions', 'Power Interruptions', { section, start, end }, ['Plant','Started At','Restored At','Duration (min)','Generator Used','Notes']);
+  rows.forEach((r) => ws.addRow([sectionLabel(r.plant_section,r.plant_name),fmtTime(r.started_at),r.restored_at?fmtTime(r.restored_at):'Ongoing',r.duration_minutes??'N/A',r.generator_activated?'Yes':'No',r.notes??'']));
   return wb;
 }
 
 async function buildConsumptionSummary(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   const [eRows, dRows] = await Promise.all([
-    pool.query(`SELECT des.summary_date, p.name AS plant_name, em.plant_section, des.meter_id, des.total_kwh, des.ceb_kwh, des.generator_kwh, des.day_kwh, des.peak_kwh, des.off_peak_kwh FROM daily_energy_summary des LEFT JOIN plants p ON p.id=des.plant_id LEFT JOIN energy_meters em ON em.meter_id=des.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR des.plant_id=$3) AND ($4::text IS NULL OR em.plant_section=$4) ORDER BY summary_date`, [start,end,plantId??null,section??null]),
-    pool.query(`SELECT dds.summary_date, p.name AS plant_name, fm.plant_section, dds.meter_id, dds.total_liters, dds.generator_run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) ORDER BY summary_date`, [start,end,plantId??null,section??null]),
+    pool.query(`SELECT des.summary_date, p.name AS plant_name, em.plant_section, des.meter_id, des.total_kwh, des.ceb_kwh, des.generator_kwh, des.day_kwh, des.peak_kwh, des.off_peak_kwh FROM daily_energy_summary des LEFT JOIN plants p ON p.id=des.plant_id LEFT JOIN energy_meters em ON em.meter_id=des.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR des.plant_id=$3) AND ($4::text IS NULL OR em.plant_section=$4) ORDER BY em.plant_section, summary_date, des.meter_id`, [start,end,plantId??null,section??null]),
+    pool.query(`SELECT dds.summary_date, p.name AS plant_name, fm.plant_section, dds.meter_id, dds.total_liters, dds.generator_run_hours FROM daily_diesel_summary dds LEFT JOIN plants p ON p.id=dds.plant_id LEFT JOIN flow_meters fm ON fm.meter_id=dds.meter_id WHERE summary_date BETWEEN $1 AND $2 AND ($3::uuid IS NULL OR dds.plant_id=$3) AND ($4::text IS NULL OR fm.plant_section=$4) ORDER BY fm.plant_section, summary_date, dds.meter_id`, [start,end,plantId??null,section??null]),
   ]);
-  const es = wb.addWorksheet('Energy'); hdr(es,['Date','Plant','Meter','Total kWh','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']); eRows.rows.forEach((r) => es.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.ceb_kwh,r.generator_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
-  const ds = wb.addWorksheet('Diesel'); hdr(ds,['Date','Plant','Meter','Liters','Run Hours']); dRows.rows.forEach((r) => ds.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_liters,r.generator_run_hours]));
+  const es = sheetWithTitle(wb, 'Energy', 'Consumption Summary - Energy', { section, start, end }, ['Date','Plant','Meter','Total kWh','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']); eRows.rows.forEach((r) => es.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.ceb_kwh,r.generator_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
+  const ds = sheetWithTitle(wb, 'Diesel', 'Consumption Summary - Diesel', { section, start, end }, ['Date','Plant','Meter','Liters','Run Hours']); dRows.rows.forEach((r) => ds.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_liters,r.generator_run_hours]));
   return wb;
 }
 
@@ -149,7 +167,8 @@ async function buildAllCombined(start: string, end: string, plantId?: string, se
 async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
   const start = input.periodStart ?? getISTDateString(new Date(Date.now() - 30 * 86400000));
   const end = input.periodEnd ?? getISTDateString();
-  const tag = `${start}_to_${end}`;
+  const plantTag = input.section ? sectionLabel(input.section).replace(/\s+/g, '') : 'AllPlants';
+  const tag = `${plantTag}_${start}_to_${end}`;
 
   let wb: ExcelJS.Workbook;
   switch (input.type) {
@@ -165,7 +184,7 @@ async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; f
   }
 
   if (input.format === 'pdf') {
-    const buffer = await buildPDF(wb, input.type, start, end);
+    const buffer = await buildPDF(wb, input.type, start, end, input.section);
     return { buffer, filename: `${input.type}_${tag}.pdf`, contentType: 'application/pdf' };
   }
 
@@ -173,7 +192,7 @@ async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; f
   return { buffer, filename: `${input.type}_${tag}.xlsx`, contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
 }
 
-async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: string): Promise<Buffer> {
+async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: string, section?: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 40, size: 'A4', layout: 'landscape' });
     const chunks: Buffer[] = [];
@@ -182,6 +201,7 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
     doc.on('error', reject);
     doc.fontSize(16).fillColor('#1e40af').text('Energy Monitoring System', { align: 'center' });
     doc.fontSize(12).fillColor('#374151').text(`Report: ${type.replace(/_/g,' ')}`, { align: 'center' });
+    doc.fontSize(13).fillColor('#111827').text(`Plant: ${scopeLabel(section)}`, { align: 'center' });
     doc.fontSize(10).fillColor('#6b7280').text(`Period: ${start} — ${end}  |  Generated: ${formatISTDateTime(new Date())} IST`, { align: 'center' });
     doc.moveDown();
     const left = doc.page.margins.left;
@@ -195,12 +215,14 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
         doc.fontSize(13).fillColor('#1e40af').text(sheet.name, left, doc.y);
         doc.moveDown(0.5);
       }
-      const colCount = sheet.getRow(1).actualCellCount || sheet.columnCount;
+      const headerRow = headerRowOf.get(sheet) ?? 1;
+      const colCount = sheet.getRow(headerRow).actualCellCount || sheet.columnCount;
       const colWidth = usableWidth / Math.max(colCount, 1);
       let y = doc.y;
       sheet.eachRow((row, rn) => {
+        if (rn < headerRow) return; // title block - already in the PDF heading
         if (y > pageBottom - 20) { doc.addPage(); y = doc.page.margins.top; }
-        doc.fillColor(rn === 1 ? '#1e40af' : '#111827').fontSize(7);
+        doc.fillColor(rn === headerRow ? '#1e40af' : '#111827').fontSize(7);
         let x = left;
         row.eachCell({ includeEmpty: true }, (cell) => {
           doc.text(String(cell.value ?? ''), x, y, { width: colWidth - 4, ellipsis: true });

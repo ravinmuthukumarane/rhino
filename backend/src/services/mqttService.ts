@@ -5,6 +5,7 @@ import { getTimePeriod, getISTDateString } from '../utils/timeUtils';
 import { EnergyReading, PowerSource, GeneratorStatus } from '../types';
 import { Server } from 'socket.io';
 import { markSeen } from './deviceMonitorService';
+import { readingIntervalHours } from '../utils/energySql';
 
 interface MeterData {
   meter_id: string;
@@ -14,6 +15,8 @@ interface MeterData {
 
 let client: MqttClient | null = null;
 let lastPowerSource: Record<string, PowerSource> = {};
+// meter_id -> recorded_at of its previous reading, for the kWh interval.
+const lastReadingAt: Record<string, Date> = {};
 
 export async function startMQTT(io: Server): Promise<void> {
   const brokerUrl = process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883';
@@ -163,6 +166,15 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
     const currY = tags.curr_l2 ?? tags.curr_b ?? currR;
     const currB = tags.curr_l3 ?? tags.curr_c ?? currR;
     const powerFactor = normalizePowerFactor(tags.total_pf ?? 0, rows[0].model);
+    const recordedAt = new Date(data.timestamp || Date.now());
+    if (!lastReadingAt[meterId]) {
+      const { rows: [prev] } = await pool.query(
+        'SELECT recorded_at FROM energy_readings WHERE meter_id=$1 ORDER BY recorded_at DESC LIMIT 1', [meterId]
+      );
+      if (prev) lastReadingAt[meterId] = new Date(prev.recorded_at);
+    }
+    const intervalH = readingIntervalHours(lastReadingAt[meterId] ?? null, recordedAt);
+    if (!lastReadingAt[meterId] || recordedAt > lastReadingAt[meterId]) lastReadingAt[meterId] = recordedAt;
 
     // Insert energy reading
     const { rows: [reading] } = await pool.query(
@@ -189,13 +201,14 @@ async function handleEnergyReading(data: DeviceTelemetry, io: Server): Promise<v
         tags.freq ?? 50,
         source,
         timePeriod,
-        new Date(data.timestamp || Date.now()),
+        recordedAt,
       ]
     );
 
     // Update daily summary
-    const today = getISTDateString(new Date(data.timestamp || Date.now()));
-    const dKwh = powerKw * (5 / 3600); // Assuming 5-second intervals
+    const today = getISTDateString(recordedAt);
+    // Real time since this meter's previous reading - see utils/energySql.ts.
+    const dKwh = powerKw * intervalH;
     const cebKwh = source === 'CEB' ? dKwh : 0;
     const genKwh = source === 'GENERATOR' ? dKwh : 0;
 
