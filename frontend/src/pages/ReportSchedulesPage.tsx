@@ -1,10 +1,10 @@
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, Fragment } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reportsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { fmt } from '../utils/formatters';
-import { Clock, Mail, UserPlus, Trash2, Send, Pencil, Plus } from 'lucide-react';
+import { Clock, Mail, UserPlus, Trash2, Send, Users, X, CalendarDays, CalendarClock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { ReportSchedule, ReportScheduleRecipient } from '../types';
 
@@ -25,6 +25,8 @@ const SECTIONS = [
   { value: 'P4', label: 'Plant 4' },
 ];
 
+type Frequency = 'daily' | 'monthly';
+
 const reportLabel = (v: string) => REPORTS.find((r) => r.value === v)?.label ?? v;
 const plantLabel = (v: string | null) => SECTIONS.find((s) => s.value === (v ?? ''))?.label ?? v ?? '';
 const ordinal = (n: number) => `${n}${[, 'st', 'nd', 'rd'][n % 100 >> 3 ^ 1 && n % 10] || 'th'}`;
@@ -40,120 +42,63 @@ const STATUS_STYLE: Record<string, string> = {
   skipped: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
 };
 const iconBtn = 'p-1.5 inline-flex text-gray-500 rounded transition-colors disabled:opacity-50';
+const isEmail = (v: string) => /^\S+@\S+\.\S+$/.test(v.trim());
 
-type ScheduleFields = {
-  name: string; frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string;
-  plant_section: string; send_day: number; send_time: string;
-};
+// One permanent "add" form per frequency. Saving always creates a NEW
+// schedule (never edits an existing one) and then clears the form, so a
+// different report type for the same frequency becomes its own schedule.
+function AddScheduleForm({ frequency, existing }: { frequency: Frequency; existing: ReportSchedule[] }) {
+  const qc = useQueryClient();
+  const blank = {
+    report_type: frequency === 'daily' ? 'energy_daily' : 'energy_monthly', format: 'excel', plant_section: '',
+    send_day: 1, send_time: frequency === 'daily' ? '00:10' : '06:00',
+  };
+  const [f, setF] = useState(blank);
+  const [recipients, setRecipients] = useState<{ email: string; name: string }[]>([]);
+  const [draft, setDraft] = useState({ name: '', email: '' });
 
-const NEW_SCHEDULE: ScheduleFields = {
-  name: '', frequency: 'monthly', enabled: true, report_type: 'consumption_summary', format: 'excel',
-  plant_section: '', send_day: 1, send_time: '06:00',
-};
+  const addDraft = () => {
+    if (!isEmail(draft.email)) { toast.error('Enter a valid email'); return; }
+    const email = draft.email.trim().toLowerCase();
+    if (recipients.some((r) => r.email === email)) { toast.error('Already in the list'); return; }
+    setRecipients([...recipients, { email, name: draft.name.trim() }]);
+    setDraft({ name: '', email: '' });
+  };
 
-const fieldsOf = (s: ReportSchedule): ScheduleFields => ({
-  name: s.name, frequency: s.frequency, enabled: s.enabled, report_type: s.report_type, format: s.format,
-  plant_section: s.plant_section ?? '', send_day: s.send_day ?? 1,
-  send_time: s.send_time ?? (s.frequency === 'daily' ? '00:10' : '06:00'),
-});
+  const createMutation = useMutation({
+    mutationFn: () => {
+      const label = frequency === 'daily' ? 'Daily' : 'Monthly';
+      return reportsApi.createSchedule({
+        ...f, frequency, enabled: true,
+        name: `${label} – ${reportLabel(f.report_type)} – ${plantLabel(f.plant_section)}`,
+        recipients: recipients.map((r) => ({ email: r.email, name: r.name || undefined })),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['report-schedules'] });
+      toast.success(`${frequency === 'daily' ? 'Daily' : 'Monthly'} schedule added`);
+      setF(blank); setRecipients([]); setDraft({ name: '', email: '' });
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Could not save schedule'),
+  });
 
-function SavedSchedulesTable({ schedules, isLoading, onSendNow, onDelete, busy }: {
-  schedules: ReportSchedule[]; isLoading: boolean;
-  onSendNow: (s: ReportSchedule) => void; onDelete: (s: ReportSchedule) => void; busy: boolean;
-}) {
-  return (
-    <div className="card space-y-3">
-      <h3 className="font-semibold text-gray-800 dark:text-gray-200">Saved Schedules <span className="text-xs font-normal text-gray-500">({schedules.length})</span></h3>
-      <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-gray-800/40 text-left text-xs text-gray-500">
-              {['Name', 'Status', 'Email Report Type', 'Plant', 'Format', 'Sends', 'Recipients', 'Last Send', 'Next Send', 'Last Saved', ''].map((h) =>
-                <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={11} className="px-3 py-4 text-center text-gray-500 text-xs">Loading…</td></tr>
-            ) : schedules.length === 0 ? (
-              <tr><td colSpan={11} className="px-3 py-4 text-center text-gray-500 text-xs">No schedules yet — use "Add Schedule" above.</td></tr>
-            ) : schedules.map((s) => (
-              <tr key={s.id} className="border-t border-gray-200 dark:border-gray-800/50 align-top">
-                <td className="px-3 py-2">
-                  <p className="font-semibold text-gray-800 dark:text-gray-200">{s.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{s.frequency}</p>
-                </td>
-                <td className="px-3 py-2">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.enabled ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-gray-500/10 text-gray-500'}`}>
-                    {s.enabled ? 'Enabled' : 'Disabled'}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-gray-800 dark:text-gray-200">{reportLabel(s.report_type)}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{plantLabel(s.plant_section)}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-gray-400 uppercase text-xs">{s.format}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{whenLabel(s)}</td>
-                <td className={`px-3 py-2 ${s.recipient_count ? 'text-gray-600 dark:text-gray-400' : 'text-red-600 dark:text-red-400'}`}>{s.recipient_count}</td>
-                <td className="px-3 py-2 whitespace-nowrap">
-                  {s.last_status ? (
-                    <div className="space-y-0.5">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[s.last_status] ?? ''}`}>{s.last_status}</span>
-                      <p className="text-xs text-gray-600 dark:text-gray-400">{s.last_period}</p>
-                      <p className="text-xs text-gray-500">{istDateTime(s.last_run_at)}</p>
-                      {s.last_message && <p className="text-xs text-gray-500 max-w-[220px] whitespace-normal">{s.last_message}</p>}
-                    </div>
-                  ) : <span className="text-gray-500 text-xs">Never</span>}
-                </td>
-                <td className="px-3 py-2 text-gray-800 dark:text-gray-200 whitespace-nowrap">{s.enabled ? istDateTime(s.next_send_at) : <span className="text-gray-500 text-xs">Disabled</span>}</td>
-                <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
-                  {istDateTime(s.updated_at)}{s.updated_by_name && <><br />by {s.updated_by_name}</>}
-                </td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <a href={`#schedule-${s.id}`} className={`${iconBtn} hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-500/10`} title="Edit">
-                    <Pencil className="w-3.5 h-3.5" />
-                  </a>
-                  <button onClick={() => onSendNow(s)} disabled={busy}
-                    className={`${iconBtn} hover:text-green-600 hover:bg-green-500/10`} title="Send now">
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => onDelete(s)} disabled={busy}
-                    className={`${iconBtn} hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10`} title="Delete schedule">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-gray-500">All times are Sri Lanka time. Daily reports cover the previous day; monthly reports cover the previous calendar month. "Send now" emails the most recent period immediately without changing the next scheduled send.</p>
-    </div>
-  );
-}
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    // An email typed into the box but not yet "added" still counts.
+    if (draft.email.trim()) { toast.error('Click "Add" to include the email you typed, or clear it'); return; }
+    if (!recipients.length && !confirm('No recipients added - this schedule will not email anyone until recipients are added. Save anyway?')) return;
+    createMutation.mutate();
+  };
 
-function ScheduleForm({ initial, onSave, saving, submitLabel, onCancel }: {
-  initial: ScheduleFields; onSave: (data: ScheduleFields) => void; saving: boolean;
-  submitLabel: string; onCancel?: () => void;
-}) {
-  // Seeded once per mount - the parent re-keys this form by the schedule's
-  // updated_at, so it resets after a save but never wipes unsaved edits when
-  // the page merely re-renders.
-  const [f, setF] = useState(initial);
-  const submit = (e: FormEvent) => { e.preventDefault(); onSave(f); };
+  const Icon = frequency === 'daily' ? CalendarClock : CalendarDays;
+  const count = existing.filter((s) => s.frequency === frequency).length;
 
   return (
-    <form onSubmit={submit} className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="sm:col-span-2">
-          <label className="label">Schedule Name</label>
-          <input type="text" className="input text-sm" placeholder="e.g. Plant 4 monthly energy" required maxLength={255}
-            value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-        </div>
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer pb-2">
-            <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
-            Enabled
-          </label>
-        </div>
+    <form onSubmit={submit} className="card space-y-3">
+      <div className="flex items-center gap-2">
+        <Icon className="w-5 h-5 text-primary-600 dark:text-primary-400" />
+        <h3 className="font-semibold text-gray-800 dark:text-gray-200">{frequency === 'daily' ? 'Daily' : 'Monthly'} Report Schedule</h3>
+        <span className="text-xs text-gray-500 ml-auto">{count} saved</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
@@ -177,14 +122,7 @@ function ScheduleForm({ initial, onSave, saving, submitLabel, onCancel }: {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="label">Frequency</label>
-          <select value={f.frequency} onChange={(e) => setF({ ...f, frequency: e.target.value as ScheduleFields['frequency'] })} className="input text-sm">
-            <option value="daily">Daily</option>
-            <option value="monthly">Monthly</option>
-          </select>
-        </div>
-        {f.frequency === 'monthly' && (
+        {frequency === 'monthly' && (
           <div>
             <label className="label">Day of Month</label>
             <select value={f.send_day} onChange={(e) => setF({ ...f, send_day: Number(e.target.value) })} className="input text-sm">
@@ -197,26 +135,47 @@ function ScheduleForm({ initial, onSave, saving, submitLabel, onCancel }: {
           <input type="time" value={f.send_time} onChange={(e) => setF({ ...f, send_time: e.target.value })} className="input text-sm" required />
         </div>
       </div>
-      <p className="text-xs text-gray-500">
-        {whenLabel(f)},
-        {f.frequency === 'daily' ? ' reporting the previous day.' : ' reporting the previous calendar month.'}
-        {' '}Days 29–31 aren't offered so the send date exists in every month.
-      </p>
-      <div className="flex gap-2">
-        <button type="submit" disabled={saving} className="btn-primary text-sm py-1.5 px-4">
-          {saving ? 'Saving…' : submitLabel}
-        </button>
-        {onCancel && (
-          <button type="button" onClick={onCancel} className="text-sm py-1.5 px-4 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
-            Cancel
+
+      <div className="space-y-2">
+        <label className="label">Recipients</label>
+        <div className="flex flex-wrap items-end gap-2">
+          <input type="text" className="input text-sm w-40" placeholder="Name (optional)"
+            value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+          <input type="email" className="input text-sm w-56" placeholder="email@factory.com"
+            value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addDraft(); } }} />
+          <button type="button" onClick={addDraft}
+            className="text-sm py-1.5 px-3 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 flex items-center gap-1.5">
+            <UserPlus className="w-3.5 h-3.5" /> Add
           </button>
+        </div>
+        {recipients.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {recipients.map((r) => (
+              <span key={r.email} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-primary-500/10 text-primary-700 dark:text-primary-300">
+                {r.name ? `${r.name} <${r.email}>` : r.email}
+                <button type="button" onClick={() => setRecipients(recipients.filter((x) => x.email !== r.email))} title="Remove">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            ))}
+          </div>
         )}
       </div>
+
+      <p className="text-xs text-gray-500">
+        {whenLabel({ frequency, send_day: f.send_day, send_time: f.send_time })},
+        {frequency === 'daily' ? ' reporting the previous day.' : ' reporting the previous calendar month.'}
+        {' '}Saving adds a new schedule to the list below — it never changes an existing one.
+      </p>
+      <button type="submit" disabled={createMutation.isPending} className="btn-primary text-sm py-1.5 px-4">
+        {createMutation.isPending ? 'Saving…' : `Save ${frequency === 'daily' ? 'Daily' : 'Monthly'} Schedule`}
+      </button>
     </form>
   );
 }
 
-function RecipientList({ schedule }: { schedule: ReportSchedule }) {
+function RecipientManager({ schedule }: { schedule: ReportSchedule }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ['schedule-recipients', schedule.id],
@@ -234,99 +193,64 @@ function RecipientList({ schedule }: { schedule: ReportSchedule }) {
     onSuccess: () => { refresh(); toast.success('Recipient added'); setForm({ name: '', email: '' }); },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Could not add recipient'),
   });
-  const handleAdd = (e: FormEvent) => { e.preventDefault(); addMutation.mutate(); };
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => reportsApi.deleteScheduleRecipient(schedule.id, id),
     onSuccess: () => { refresh(); toast.success('Recipient removed'); },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
   });
-  const handleDelete = (r: ReportScheduleRecipient) => {
-    if (confirm(`Remove ${r.email} from "${schedule.name}"?`)) deleteMutation.mutate(r.id);
-  };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2 p-3 bg-gray-50 dark:bg-gray-800/30 rounded-lg">
       <div className="flex items-center gap-2">
         <Mail className="w-4 h-4 text-primary-600 dark:text-primary-400" />
-        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Recipients</p>
-        <span className="text-xs text-gray-500">({recipients.length})</span>
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Recipients of "{schedule.name}"</p>
       </div>
-
-      <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-2">
-        <div>
-          <label className="label">Name (optional)</label>
-          <input type="text" className="input text-sm" placeholder="Jane Doe"
-            value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </div>
-        <div>
-          <label className="label">Email</label>
-          <input type="email" className="input text-sm" placeholder="jane@factory.com" required
-            value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        </div>
+      <form onSubmit={(e) => { e.preventDefault(); addMutation.mutate(); }} className="flex flex-wrap items-end gap-2">
+        <input type="text" className="input text-sm w-40" placeholder="Name (optional)"
+          value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input type="email" className="input text-sm w-56" placeholder="email@factory.com" required
+          value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         <button type="submit" className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5" disabled={addMutation.isPending}>
-          <UserPlus className="w-3.5 h-3.5" />
-          {addMutation.isPending ? 'Adding…' : 'Add'}
+          <UserPlus className="w-3.5 h-3.5" /> {addMutation.isPending ? 'Adding…' : 'Add'}
         </button>
       </form>
-
-      <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <tbody>
-            {isLoading ? (
-              <tr><td className="px-3 py-4 text-center text-gray-500 text-xs">Loading…</td></tr>
-            ) : recipients.length === 0 ? (
-              <tr><td className="px-3 py-4 text-center text-gray-500 text-xs">No recipients yet — this schedule won't send until one is added.</td></tr>
-            ) : recipients.map((r) => (
-              <tr key={r.id} className="border-b border-gray-200 dark:border-gray-800/50 last:border-0 hover:bg-gray-100 dark:hover:bg-gray-800/20">
-                <td className="px-3 py-2 text-gray-800 dark:text-gray-200">{r.name || '—'}</td>
-                <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.email}</td>
-                <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">{fmt.date(r.created_at)}</td>
-                <td className="px-3 py-2 text-right">
-                  <button onClick={() => handleDelete(r)} disabled={deleteMutation.isPending}
-                    className="p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                    title="Remove recipient">
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {isLoading ? <p className="text-xs text-gray-500">Loading…</p>
+        : recipients.length === 0 ? <p className="text-xs text-red-600 dark:text-red-400">No recipients — this schedule won't send until one is added.</p>
+        : (
+          <table className="w-full text-sm">
+            <tbody>
+              {recipients.map((r) => (
+                <tr key={r.id} className="border-b border-gray-200 dark:border-gray-800/50 last:border-0">
+                  <td className="px-2 py-1.5 text-gray-800 dark:text-gray-200">{r.name || '—'}</td>
+                  <td className="px-2 py-1.5 text-gray-600 dark:text-gray-400">{r.email}</td>
+                  <td className="px-2 py-1.5 text-gray-500 text-xs whitespace-nowrap">{fmt.date(r.created_at)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <button onClick={() => { if (confirm(`Remove ${r.email}?`)) deleteMutation.mutate(r.id); }} disabled={deleteMutation.isPending}
+                      className={`${iconBtn} hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10`} title="Remove recipient">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
     </div>
   );
 }
 
-function SchedulesManager() {
+function SavedSchedulesTable({ schedules, isLoading }: { schedules: ReportSchedule[]; isLoading: boolean }) {
   const qc = useQueryClient();
-  const { data: schedulesData, isLoading } = useQuery({
-    queryKey: ['report-schedules'],
-    queryFn: () => reportsApi.getSchedules().then((r) => r.data),
-  });
-  const schedules: ReportSchedule[] = schedulesData?.schedules ?? [];
   const refresh = () => qc.invalidateQueries({ queryKey: ['report-schedules'] });
-  const [adding, setAdding] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
 
-  const createMutation = useMutation({
-    mutationFn: (data: ScheduleFields) => reportsApi.createSchedule(data),
-    onSuccess: (res) => {
-      refresh(); setAdding(false);
-      toast.success('Schedule created — add its recipients below');
-      const id = res.data?.schedule?.id;
-      if (id) setTimeout(() => document.getElementById(`schedule-${id}`)?.scrollIntoView({ behavior: 'smooth' }), 300);
-    },
-    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Could not create schedule'),
-  });
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ScheduleFields }) => reportsApi.updateSchedule(id, data),
-    onSuccess: () => { refresh(); toast.success('Schedule saved'); },
-    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Save failed'),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => reportsApi.deleteSchedule(id),
-    onSuccess: () => { refresh(); toast.success('Schedule deleted'); },
-    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
+  const toggleMutation = useMutation({
+    mutationFn: (s: ReportSchedule) => reportsApi.updateSchedule(s.id, {
+      name: s.name, frequency: s.frequency, enabled: !s.enabled, report_type: s.report_type, format: s.format,
+      plant_section: s.plant_section ?? '', send_day: s.send_day, send_time: s.send_time,
+    }),
+    onSuccess: (_r, s) => { refresh(); toast.success(s.enabled ? 'Schedule disabled' : 'Schedule enabled'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Update failed'),
   });
   const sendNowMutation = useMutation({
     mutationFn: (id: string) => reportsApi.sendScheduleNow(id),
@@ -337,14 +261,95 @@ function SchedulesManager() {
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Send failed'),
     onSettled: refresh,
   });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => reportsApi.deleteSchedule(id),
+    onSuccess: () => { refresh(); toast.success('Schedule removed'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
+  });
+  const busy = toggleMutation.isPending || sendNowMutation.isPending || deleteMutation.isPending;
 
-  const handleSendNow = (s: ReportSchedule) => {
-    if (confirm(`Send "${s.name}" to its ${s.recipient_count} recipient(s) now?`)) sendNowMutation.mutate(s.id);
-  };
-  const handleDelete = (s: ReportSchedule) => {
-    if (confirm(`Delete the schedule "${s.name}"? Its ${s.recipient_count} recipient(s) are removed with it.`)) deleteMutation.mutate(s.id);
-  };
-  const busy = sendNowMutation.isPending || deleteMutation.isPending;
+  const cols = ['Schedule', 'Status', 'Email Report Type', 'Plant', 'Format', 'Sends', 'Recipients', 'Last Send', 'Next Send', 'Saved', ''];
+
+  return (
+    <div className="card space-y-3">
+      <h3 className="font-semibold text-gray-800 dark:text-gray-200">Saved Schedules <span className="text-xs font-normal text-gray-500">({schedules.length})</span></h3>
+      <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50 dark:bg-gray-800/40 text-left text-xs text-gray-500">
+              {cols.map((h) => <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={cols.length} className="px-3 py-4 text-center text-gray-500 text-xs">Loading…</td></tr>
+            ) : schedules.length === 0 ? (
+              <tr><td colSpan={cols.length} className="px-3 py-4 text-center text-gray-500 text-xs">No schedules saved yet.</td></tr>
+            ) : schedules.map((s) => (
+              <Fragment key={s.id}>
+                <tr className="border-t border-gray-200 dark:border-gray-800/50 align-top">
+                  <td className="px-3 py-2 font-semibold text-gray-800 dark:text-gray-200 capitalize">{s.frequency}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => toggleMutation.mutate(s)} disabled={busy} title={s.enabled ? 'Click to disable' : 'Click to enable'}
+                      className={`text-xs font-semibold px-2 py-0.5 rounded-full disabled:opacity-50 ${s.enabled ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-gray-500/10 text-gray-500'}`}>
+                      {s.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 text-gray-800 dark:text-gray-200">{reportLabel(s.report_type)}</td>
+                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{plantLabel(s.plant_section)}</td>
+                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400 uppercase text-xs">{s.format}</td>
+                  <td className="px-3 py-2 text-gray-600 dark:text-gray-400 whitespace-nowrap">{whenLabel(s)}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => setOpenId(openId === s.id ? null : s.id)}
+                      className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded hover:bg-primary-500/10 ${s.recipient_count ? 'text-gray-700 dark:text-gray-300' : 'text-red-600 dark:text-red-400'}`}
+                      title="View / edit recipients">
+                      <Users className="w-3.5 h-3.5" /> {s.recipient_count}
+                    </button>
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {s.last_status ? (
+                      <div className="space-y-0.5">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full capitalize ${STATUS_STYLE[s.last_status] ?? ''}`}>{s.last_status}</span>
+                        <p className="text-xs text-gray-600 dark:text-gray-400">{s.last_period}</p>
+                        <p className="text-xs text-gray-500">{istDateTime(s.last_run_at)}</p>
+                        {s.last_message && <p className="text-xs text-gray-500 max-w-[220px] whitespace-normal">{s.last_message}</p>}
+                      </div>
+                    ) : <span className="text-gray-500 text-xs">Never</span>}
+                  </td>
+                  <td className="px-3 py-2 text-gray-800 dark:text-gray-200 whitespace-nowrap">{s.enabled ? istDateTime(s.next_send_at) : <span className="text-gray-500 text-xs">Disabled</span>}</td>
+                  <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">
+                    {istDateTime(s.updated_at)}{s.updated_by_name && <><br />by {s.updated_by_name}</>}
+                  </td>
+                  <td className="px-3 py-2 text-right whitespace-nowrap">
+                    <button onClick={() => { if (confirm(`Send "${s.name}" to its ${s.recipient_count} recipient(s) now?`)) sendNowMutation.mutate(s.id); }} disabled={busy}
+                      className={`${iconBtn} hover:text-green-600 hover:bg-green-500/10`} title="Send now">
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => { if (confirm(`Remove the schedule "${s.name}" and its recipients?`)) deleteMutation.mutate(s.id); }} disabled={busy}
+                      className={`${iconBtn} hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10`} title="Remove schedule">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
+                </tr>
+                {openId === s.id && (
+                  <tr><td colSpan={cols.length} className="px-3 pb-3"><RecipientManager schedule={s} /></td></tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-gray-500">All times are Sri Lanka time. Click a status to enable/disable, or the recipient count to view and edit who receives it. "Send now" emails the most recent period immediately without changing the next scheduled send.</p>
+    </div>
+  );
+}
+
+function SchedulesManager() {
+  const { data, isLoading } = useQuery({
+    queryKey: ['report-schedules'],
+    queryFn: () => reportsApi.getSchedules().then((r) => r.data),
+  });
+  const schedules: ReportSchedule[] = data?.schedules ?? [];
 
   return (
     <div className="space-y-5">
@@ -352,42 +357,18 @@ function SchedulesManager() {
         <div className="flex items-center gap-2 mb-1">
           <Clock className="w-5 h-5 text-primary-600 dark:text-primary-400" />
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Report Schedules</h2>
-          {!adding && (
-            <button onClick={() => setAdding(true)} className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5 ml-auto">
-              <Plus className="w-3.5 h-3.5" /> Add Schedule
-            </button>
-          )}
         </div>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Set up as many automated report emails as you need — e.g. a separate monthly report per plant. Each schedule has its own report type, plant, send day/time and recipient list. The email body summarizes Plant 1 and Plant 4, with the full report attached.
+          Use the Monthly or Daily form to add a scheduled report email. Each save adds a new schedule — e.g. a Monthly Energy report and a Monthly Diesel report are two separate schedules, each with its own recipients. The email body summarizes Plant 1 and Plant 4, with the chosen report attached.
         </p>
       </div>
 
-      {adding && (
-        <div className="card space-y-3">
-          <h3 className="font-semibold text-gray-800 dark:text-gray-200">New Schedule</h3>
-          <ScheduleForm initial={NEW_SCHEDULE} submitLabel="Create Schedule" saving={createMutation.isPending}
-            onSave={(data) => createMutation.mutate(data)} onCancel={() => setAdding(false)} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <AddScheduleForm frequency="monthly" existing={schedules} />
+        <AddScheduleForm frequency="daily" existing={schedules} />
+      </div>
 
-      <SavedSchedulesTable schedules={schedules} isLoading={isLoading} onSendNow={handleSendNow} onDelete={handleDelete} busy={busy} />
-
-      {schedules.map((s) => (
-        <div key={s.id} id={`schedule-${s.id}`} className="card space-y-4 scroll-mt-4">
-          <div className="flex items-center gap-2">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200">{s.name}</h3>
-            <span className="text-xs text-gray-500 capitalize">· {s.frequency}</span>
-            <button onClick={() => handleDelete(s)} disabled={busy}
-              className="ml-auto text-xs flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
-              <Trash2 className="w-3.5 h-3.5" /> Delete schedule
-            </button>
-          </div>
-          <ScheduleForm key={`${s.id}:${s.updated_at}`} initial={fieldsOf(s)} submitLabel="Save" saving={updateMutation.isPending && updateMutation.variables?.id === s.id}
-            onSave={(data) => updateMutation.mutate({ id: s.id, data })} />
-          <RecipientList schedule={s} />
-        </div>
-      ))}
+      <SavedSchedulesTable schedules={schedules} isLoading={isLoading} />
     </div>
   );
 }

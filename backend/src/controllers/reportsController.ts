@@ -99,16 +99,45 @@ export async function createReportSchedule(req: AuthRequest, res: Response, next
   const parsed = parseSchedule(req.body ?? {});
   if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
   const v = parsed.value;
+  // Recipients come with the schedule so it's complete the moment it's saved.
+  const raw: { email?: string; name?: string }[] = Array.isArray(req.body?.recipients) ? req.body.recipients : [];
+  const recipients = raw.map((r) => ({ email: String(r?.email ?? '').trim().toLowerCase(), name: r?.name?.trim() || null }));
+  const bad = recipients.find((r) => !/^\S+@\S+\.\S+$/.test(r.email));
+  if (bad) { res.status(400).json({ error: `Invalid email: ${bad.email || '(blank)'}` }); return; }
+
+  const client = await pool.connect();
   try {
+    // Saving the same settings twice would email the same report twice.
+    const { rows: [dup] } = await client.query(
+      `SELECT name FROM report_schedules WHERE frequency=$1 AND report_type=$2 AND format=$3
+       AND plant_section IS NOT DISTINCT FROM $4 AND send_time=$5 AND ($1='daily' OR send_day=$6) LIMIT 1`,
+      [v.frequency, v.report_type, v.format, v.plant_section, v.send_time, v.send_day]
+    );
+    if (dup) { res.status(409).json({ error: `An identical schedule already exists ("${dup.name}") - add recipients to that one instead` }); return; }
+
+    await client.query('BEGIN');
     // updated_at = NOW() means a slot that's already past today/this month
     // isn't sent immediately - the first send is the next upcoming slot.
-    const { rows: [schedule] } = await pool.query(
+    const { rows: [schedule] } = await client.query(
       `INSERT INTO report_schedules (name, frequency, enabled, report_type, format, plant_id, plant_section, send_day, send_time, updated_by, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()) RETURNING *`,
       [v.name, v.frequency, v.enabled, v.report_type, v.format, v.plant_id, v.plant_section, v.send_day, v.send_time, req.user!.id]
     );
+    for (const r of recipients) {
+      await client.query(
+        `INSERT INTO report_schedule_recipients (schedule_id, email, name) VALUES ($1,$2,$3)
+         ON CONFLICT (schedule_id, email) DO NOTHING`,
+        [schedule.id, r.email, r.name]
+      );
+    }
+    await client.query('COMMIT');
     res.status(201).json({ schedule });
-  } catch (err) { next(err); }
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    next(err);
+  } finally {
+    client.release();
+  }
 }
 
 export async function updateReportSchedule(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
