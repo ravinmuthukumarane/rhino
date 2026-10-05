@@ -45,6 +45,8 @@ export interface MonitoredDevice {
 }
 
 export interface ReportSchedule {
+  id: string;
+  name: string;
   frequency: 'daily' | 'monthly';
   enabled: boolean;
   report_type: string;
@@ -65,7 +67,7 @@ export interface ReportSchedule {
 
 export interface ReportScheduleRecipient {
   id: string;
-  frequency: 'daily' | 'monthly';
+  schedule_id: string;
   email: string;
   name: string | null;
   created_at: string;

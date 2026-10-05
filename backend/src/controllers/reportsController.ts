@@ -41,18 +41,53 @@ export async function getReportHistory(req: AuthRequest, res: Response, next: Ne
   } catch (err) { next(err); }
 }
 
+// Deletes one Report History entry. History rows are only a log of what was
+// generated (no file is stored), so this removes the log line only.
+export async function deleteReportHistory(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Report not found' }); return; }
+  try {
+    const { rowCount } = await pool.query('DELETE FROM reports WHERE id=$1', [req.params.id]);
+    if (!rowCount) { res.status(404).json({ error: 'Report not found' }); return; }
+    res.status(204).send();
+  } catch (err) { next(err); }
+}
+
 const REPORT_TYPES = ['energy_daily','energy_monthly','diesel_daily','diesel_monthly',
                       'power_quality','power_interruption','consumption_summary','all_combined'];
+
+const isUuid = (v: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+type ScheduleInput = {
+  name: string; frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string;
+  plant_id: string | null; plant_section: string | null; send_day: number; send_time: string;
+};
+
+// Shared validation for create/update - returns an error message or the
+// cleaned values.
+function parseSchedule(body: Record<string, any>): { error: string } | { value: ScheduleInput } {
+  const { name, frequency, enabled, report_type, format, plant_id, plant_section, send_day, send_time } = body;
+  if (typeof name !== 'string' || !name.trim()) return { error: 'Schedule name is required' };
+  if (!['daily', 'monthly'].includes(frequency)) return { error: 'Frequency must be daily or monthly' };
+  if (!REPORT_TYPES.includes(report_type)) return { error: 'Invalid report type' };
+  if (!['excel', 'pdf'].includes(format)) return { error: 'Format must be excel or pdf' };
+  const day = send_day == null ? 1 : Number(send_day);
+  if (!Number.isInteger(day) || day < 1 || day > 28) return { error: 'Day of month must be 1-28' };
+  if (typeof send_time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(send_time)) return { error: 'Time must be HH:MM (24-hour)' };
+  return { value: {
+    name: name.trim().slice(0, 255), frequency, enabled: enabled !== false, report_type, format,
+    plant_id: plant_id || null, plant_section: plant_section || null, send_day: day, send_time,
+  } };
+}
 
 export async function getReportSchedules(_req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
   try {
     const { rows } = await pool.query(
       `SELECT rs.*, to_char(rs.send_time, 'HH24:MI') AS send_time, p.name AS plant_name, u.name AS updated_by_name,
-              (SELECT COUNT(*)::int FROM report_schedule_recipients r WHERE r.frequency = rs.frequency) AS recipient_count
+              (SELECT COUNT(*)::int FROM report_schedule_recipients r WHERE r.schedule_id = rs.id) AS recipient_count
        FROM report_schedules rs
        LEFT JOIN plants p ON p.id = rs.plant_id
        LEFT JOIN users u ON u.id = rs.updated_by
-       ORDER BY rs.frequency`
+       ORDER BY rs.created_at, rs.name`
     );
     res.json({
       schedules: rows.map((s) => ({ ...s, next_send_at: s.enabled ? nextSlot(s) : null })),
@@ -60,59 +95,82 @@ export async function getReportSchedules(_req: AuthRequest, res: Response, next:
   } catch (err) { next(err); }
 }
 
+export async function createReportSchedule(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  const parsed = parseSchedule(req.body ?? {});
+  if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
+  const v = parsed.value;
+  try {
+    // updated_at = NOW() means a slot that's already past today/this month
+    // isn't sent immediately - the first send is the next upcoming slot.
+    const { rows: [schedule] } = await pool.query(
+      `INSERT INTO report_schedules (name, frequency, enabled, report_type, format, plant_id, plant_section, send_day, send_time, updated_by, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()) RETURNING *`,
+      [v.name, v.frequency, v.enabled, v.report_type, v.format, v.plant_id, v.plant_section, v.send_day, v.send_time, req.user!.id]
+    );
+    res.status(201).json({ schedule });
+  } catch (err) { next(err); }
+}
+
 export async function updateReportSchedule(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { frequency } = req.params;
-  const { enabled, report_type, format, plant_id, plant_section, send_day, send_time } = req.body as Record<string, any>;
-  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
-  const day = send_day == null ? 1 : Number(send_day);
-  if (!Number.isInteger(day) || day < 1 || day > 28) { res.status(400).json({ error: 'Day of month must be 1-28' }); return; }
-  if (typeof send_time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(send_time)) { res.status(400).json({ error: 'Time must be HH:MM (24-hour)' }); return; }
-  if (!REPORT_TYPES.includes(report_type)) { res.status(400).json({ error: 'Invalid report type' }); return; }
-  if (!['excel', 'pdf'].includes(format)) { res.status(400).json({ error: 'Format must be excel or pdf' }); return; }
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Schedule not found' }); return; }
+  const parsed = parseSchedule(req.body ?? {});
+  if ('error' in parsed) { res.status(400).json({ error: parsed.error }); return; }
+  const v = parsed.value;
   try {
     const { rows: [schedule] } = await pool.query(
-      `UPDATE report_schedules SET enabled=$1, report_type=$2, format=$3, plant_id=$4, plant_section=$5, send_day=$8, send_time=$9,
-       updated_by=$6, updated_at=NOW()
-       WHERE frequency=$7 RETURNING *`,
-      [!!enabled, report_type, format, plant_id || null, plant_section || null, req.user!.id, frequency, day, send_time]
+      `UPDATE report_schedules SET name=$1, frequency=$2, enabled=$3, report_type=$4, format=$5, plant_id=$6, plant_section=$7,
+       send_day=$8, send_time=$9, updated_by=$10, updated_at=NOW()
+       WHERE id=$11 RETURNING *`,
+      [v.name, v.frequency, v.enabled, v.report_type, v.format, v.plant_id, v.plant_section, v.send_day, v.send_time, req.user!.id, req.params.id]
     );
     if (!schedule) { res.status(404).json({ error: 'Schedule not found' }); return; }
     res.json({ schedule });
   } catch (err) { next(err); }
 }
 
+// Recipients are removed with the schedule (ON DELETE CASCADE).
+export async function deleteReportSchedule(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Schedule not found' }); return; }
+  try {
+    const { rowCount } = await pool.query('DELETE FROM report_schedules WHERE id=$1', [req.params.id]);
+    if (!rowCount) { res.status(404).json({ error: 'Schedule not found' }); return; }
+    res.status(204).send();
+  } catch (err) { next(err); }
+}
+
 export async function getScheduleRecipients(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { frequency } = req.params;
-  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Schedule not found' }); return; }
   try {
     const { rows } = await pool.query(
-      'SELECT * FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email', [frequency]
+      'SELECT * FROM report_schedule_recipients WHERE schedule_id=$1 ORDER BY email', [req.params.id]
     );
     res.json({ recipients: rows });
   } catch (err) { next(err); }
 }
 
 export async function addScheduleRecipient(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { frequency } = req.params;
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Schedule not found' }); return; }
   const { email, name } = req.body as { email?: string; name?: string };
-  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) { res.status(400).json({ error: 'Valid email required' }); return; }
   try {
     const { rows: [recipient] } = await pool.query(
-      `INSERT INTO report_schedule_recipients (frequency, email, name) VALUES ($1,$2,$3)
-       ON CONFLICT (frequency, email) DO UPDATE SET name=EXCLUDED.name RETURNING *`,
-      [frequency, email.trim().toLowerCase(), name || null]
+      `INSERT INTO report_schedule_recipients (schedule_id, email, name) VALUES ($1,$2,$3)
+       ON CONFLICT (schedule_id, email) DO UPDATE SET name=EXCLUDED.name RETURNING *`,
+      [req.params.id, email.trim().toLowerCase(), name || null]
     );
     res.status(201).json({ recipient });
-  } catch (err) { next(err); }
+  } catch (err: any) {
+    if (err.code === '23503') { res.status(404).json({ error: 'Schedule not found' }); return; }
+    next(err);
+  }
 }
 
 export async function deleteScheduleRecipient(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { frequency, id } = req.params;
-  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  const { id, recipientId } = req.params;
+  if (!isUuid(id) || !isUuid(recipientId)) { res.status(404).json({ error: 'Recipient not found' }); return; }
   try {
     const { rowCount } = await pool.query(
-      'DELETE FROM report_schedule_recipients WHERE id=$1 AND frequency=$2', [id, frequency]
+      'DELETE FROM report_schedule_recipients WHERE id=$1 AND schedule_id=$2', [recipientId, id]
     );
     if (!rowCount) { res.status(404).json({ error: 'Recipient not found' }); return; }
     res.status(204).send();
@@ -122,12 +180,11 @@ export async function deleteScheduleRecipient(req: AuthRequest, res: Response, n
 // Sends a schedule's report right now, for the period its most recent slot
 // covers (yesterday / last month), without consuming the next scheduled send.
 export async function sendScheduleNow(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-  const { frequency } = req.params;
-  if (!['daily', 'monthly'].includes(frequency)) { res.status(400).json({ error: 'Invalid frequency' }); return; }
+  if (!isUuid(req.params.id)) { res.status(404).json({ error: 'Schedule not found' }); return; }
   try {
-    const { rows: [s] } = await pool.query("SELECT frequency, send_day, to_char(send_time,'HH24:MI') AS send_time FROM report_schedules WHERE frequency=$1", [frequency]);
+    const { rows: [s] } = await pool.query("SELECT id, frequency, send_day, to_char(send_time,'HH24:MI') AS send_time FROM report_schedules WHERE id=$1", [req.params.id]);
     if (!s) { res.status(404).json({ error: 'Schedule not found' }); return; }
-    const result = await runScheduledReport(frequency as 'daily' | 'monthly', lastSlot(s), true);
+    const result = await runScheduledReport(s.id, lastSlot(s), true);
     if (result.status === 'failed') { res.status(500).json({ error: result.message }); return; }
     res.json(result);
   } catch (err) { next(err); }

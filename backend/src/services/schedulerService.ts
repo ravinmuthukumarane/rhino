@@ -19,9 +19,10 @@ type Frequency = 'daily' | 'monthly';
 // Generates and emails one schedule's report for the period belonging to
 // `slot`, and records the outcome on the schedule row (last_run_at/status/
 // message/period) so the Report Schedules page can show what happened.
-export async function runScheduledReport(frequency: Frequency, slot: Date, manual = false): Promise<{ status: string; message: string }> {
-  const { rows: [sched] } = await pool.query('SELECT * FROM report_schedules WHERE frequency=$1', [frequency]);
+export async function runScheduledReport(scheduleId: string, slot: Date, manual = false): Promise<{ status: string; message: string }> {
+  const { rows: [sched] } = await pool.query('SELECT * FROM report_schedules WHERE id=$1', [scheduleId]);
   if (!sched) return { status: 'failed', message: 'Schedule not found' };
+  const frequency: Frequency = sched.frequency;
 
   const { start, end, label: periodLabel } = slotPeriod(frequency, slot);
   const record = async (status: string, message: string) => {
@@ -29,18 +30,18 @@ export async function runScheduledReport(frequency: Frequency, slot: Date, manua
     // last_run_at for real scheduled runs, so the next automatic send still
     // happens on time.
     await pool.query(
-      `UPDATE report_schedules SET last_status=$1, last_message=$2, last_period=$3${manual ? '' : ', last_run_at=$5'} WHERE frequency=$4`,
-      manual ? [status, `${message} (sent manually)`, periodLabel, frequency] : [status, message, periodLabel, frequency, slot]
+      `UPDATE report_schedules SET last_status=$1, last_message=$2, last_period=$3${manual ? '' : ', last_run_at=$5'} WHERE id=$4`,
+      manual ? [status, `${message} (sent manually)`, periodLabel, scheduleId] : [status, message, periodLabel, scheduleId, slot]
     );
     return { status, message };
   };
 
-  console.log(`[Scheduler] Generating ${frequency} report (${sched.report_type}, ${sched.format}) for ${periodLabel}…`);
+  console.log(`[Scheduler] Generating "${sched.name}" (${frequency}, ${sched.report_type}, ${sched.format}) for ${periodLabel}…`);
   try {
     // Make sure the reported day's totals are final before they're emailed.
     if (frequency === 'daily') await recalcDailySummary(start);
 
-    const { rows } = await pool.query('SELECT email FROM report_schedule_recipients WHERE frequency=$1 ORDER BY email', [frequency]);
+    const { rows } = await pool.query('SELECT email FROM report_schedule_recipients WHERE schedule_id=$1 ORDER BY email', [scheduleId]);
     const emails = rows.map((r: { email: string }) => r.email);
     if (!emails.length) return record('skipped', 'No recipients');
     if (!process.env.SMTP_USER) return record('skipped', 'Email (SMTP) not configured on the server');
@@ -60,10 +61,10 @@ export async function runScheduledReport(frequency: Frequency, slot: Date, manua
     const plantLabel = sched.plant_section === 'P1' ? 'Plant 1' : sched.plant_section === 'P4' ? 'Plant 4' : (sched.plant_section || 'All Plants (Plant 1 + Plant 4)');
     const label = `${REPORT_LABELS[sched.report_type] ?? sched.report_type} – ${plantLabel}`;
     await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections);
-    console.log(`[Scheduler] ${frequency} report sent to ${emails.join(', ')}`);
+    console.log(`[Scheduler] "${sched.name}" sent to ${emails.join(', ')}`);
     return record('sent', `Sent to ${emails.length} recipient${emails.length > 1 ? 's' : ''}`);
   } catch (err) {
-    console.error(`[Scheduler] ${frequency} report failed:`, (err as Error).message);
+    console.error(`[Scheduler] "${sched.name}" failed:`, (err as Error).message);
     return record('failed', (err as Error).message);
   }
 }
@@ -91,8 +92,8 @@ async function checkDueSchedules(): Promise<void> {
       if (alreadyRun || savedAfterSlot || now.getTime() - slot.getTime() > CATCH_UP_MS) continue;
       // Claim the slot before the (slow) generate/send so an overlapping
       // check can't send it twice.
-      await pool.query('UPDATE report_schedules SET last_run_at=$1 WHERE frequency=$2', [slot, s.frequency]);
-      await runScheduledReport(s.frequency, slot);
+      await pool.query('UPDATE report_schedules SET last_run_at=$1 WHERE id=$2', [slot, s.id]);
+      await runScheduledReport(s.id, slot);
     }
   } catch (err) {
     console.error('[Scheduler] Schedule check failed:', (err as Error).message);

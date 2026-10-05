@@ -1,10 +1,10 @@
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, FormEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reportsApi } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { fmt } from '../utils/formatters';
-import { Clock, Mail, UserPlus, Trash2, Send, Pencil } from 'lucide-react';
+import { Clock, Mail, UserPlus, Trash2, Send, Pencil, Plus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import type { ReportSchedule, ReportScheduleRecipient } from '../types';
 
@@ -39,27 +39,50 @@ const STATUS_STYLE: Record<string, string> = {
   failed: 'bg-red-500/10 text-red-700 dark:text-red-400',
   skipped: 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400',
 };
+const iconBtn = 'p-1.5 inline-flex text-gray-500 rounded transition-colors disabled:opacity-50';
 
-function SavedSchedulesTable({ schedules, onSendNow, sending }: {
-  schedules: ReportSchedule[]; onSendNow: (f: string) => void; sending: string | null;
+type ScheduleFields = {
+  name: string; frequency: 'daily' | 'monthly'; enabled: boolean; report_type: string; format: string;
+  plant_section: string; send_day: number; send_time: string;
+};
+
+const NEW_SCHEDULE: ScheduleFields = {
+  name: '', frequency: 'monthly', enabled: true, report_type: 'consumption_summary', format: 'excel',
+  plant_section: '', send_day: 1, send_time: '06:00',
+};
+
+const fieldsOf = (s: ReportSchedule): ScheduleFields => ({
+  name: s.name, frequency: s.frequency, enabled: s.enabled, report_type: s.report_type, format: s.format,
+  plant_section: s.plant_section ?? '', send_day: s.send_day ?? 1,
+  send_time: s.send_time ?? (s.frequency === 'daily' ? '00:10' : '06:00'),
+});
+
+function SavedSchedulesTable({ schedules, isLoading, onSendNow, onDelete, busy }: {
+  schedules: ReportSchedule[]; isLoading: boolean;
+  onSendNow: (s: ReportSchedule) => void; onDelete: (s: ReportSchedule) => void; busy: boolean;
 }) {
   return (
     <div className="card space-y-3">
-      <h3 className="font-semibold text-gray-800 dark:text-gray-200">Saved Schedules</h3>
+      <h3 className="font-semibold text-gray-800 dark:text-gray-200">Saved Schedules <span className="text-xs font-normal text-gray-500">({schedules.length})</span></h3>
       <div className="border border-gray-200 dark:border-gray-800 rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 dark:bg-gray-800/40 text-left text-xs text-gray-500">
-              {['Schedule', 'Status', 'Email Report Type', 'Plant', 'Format', 'Sends', 'Recipients', 'Last Send', 'Next Send', 'Last Saved', ''].map((h) =>
+              {['Name', 'Status', 'Email Report Type', 'Plant', 'Format', 'Sends', 'Recipients', 'Last Send', 'Next Send', 'Last Saved', ''].map((h) =>
                 <th key={h} className="px-3 py-2 font-medium whitespace-nowrap">{h}</th>)}
             </tr>
           </thead>
           <tbody>
-            {schedules.length === 0 ? (
+            {isLoading ? (
               <tr><td colSpan={11} className="px-3 py-4 text-center text-gray-500 text-xs">Loading…</td></tr>
+            ) : schedules.length === 0 ? (
+              <tr><td colSpan={11} className="px-3 py-4 text-center text-gray-500 text-xs">No schedules yet — use "Add Schedule" above.</td></tr>
             ) : schedules.map((s) => (
-              <tr key={s.frequency} className="border-t border-gray-200 dark:border-gray-800/50 align-top">
-                <td className="px-3 py-2 font-semibold text-gray-800 dark:text-gray-200 capitalize">{s.frequency}</td>
+              <tr key={s.id} className="border-t border-gray-200 dark:border-gray-800/50 align-top">
+                <td className="px-3 py-2">
+                  <p className="font-semibold text-gray-800 dark:text-gray-200">{s.name}</p>
+                  <p className="text-xs text-gray-500 capitalize">{s.frequency}</p>
+                </td>
                 <td className="px-3 py-2">
                   <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${s.enabled ? 'bg-green-500/10 text-green-700 dark:text-green-400' : 'bg-gray-500/10 text-gray-500'}`}>
                     {s.enabled ? 'Enabled' : 'Disabled'}
@@ -85,12 +108,16 @@ function SavedSchedulesTable({ schedules, onSendNow, sending }: {
                   {istDateTime(s.updated_at)}{s.updated_by_name && <><br />by {s.updated_by_name}</>}
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <a href={`#schedule-${s.frequency}`} className="p-1.5 inline-flex text-gray-500 hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-500/10 rounded" title="Edit">
+                  <a href={`#schedule-${s.id}`} className={`${iconBtn} hover:text-primary-600 dark:hover:text-primary-400 hover:bg-primary-500/10`} title="Edit">
                     <Pencil className="w-3.5 h-3.5" />
                   </a>
-                  <button onClick={() => onSendNow(s.frequency)} disabled={sending !== null}
-                    className="p-1.5 inline-flex text-gray-500 hover:text-green-600 hover:bg-green-500/10 rounded disabled:opacity-50" title="Send now">
+                  <button onClick={() => onSendNow(s)} disabled={busy}
+                    className={`${iconBtn} hover:text-green-600 hover:bg-green-500/10`} title="Send now">
                     <Send className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => onDelete(s)} disabled={busy}
+                    className={`${iconBtn} hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10`} title="Delete schedule">
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </td>
               </tr>
@@ -103,26 +130,30 @@ function SavedSchedulesTable({ schedules, onSendNow, sending }: {
   );
 }
 
-function ScheduleCard({ schedule, onSave, saving }: {
-  schedule: ReportSchedule;
-  onSave: (data: object) => void;
-  saving: boolean;
+function ScheduleForm({ initial, onSave, saving, submitLabel, onCancel }: {
+  initial: ScheduleFields; onSave: (data: ScheduleFields) => void; saving: boolean;
+  submitLabel: string; onCancel?: () => void;
 }) {
-  const fromSchedule = (s: ReportSchedule) => ({
-    enabled: s.enabled, report_type: s.report_type, format: s.format as string,
-    plant_id: s.plant_id ?? '', plant_section: s.plant_section ?? '',
-    send_day: s.send_day ?? 1, send_time: s.send_time ?? (s.frequency === 'daily' ? '00:10' : '06:00'),
-  });
-  const [f, setF] = useState(fromSchedule(schedule));
-  useEffect(() => { setF(fromSchedule(schedule)); }, [schedule]);
+  // Seeded once per mount - the parent re-keys this form by the schedule's
+  // updated_at, so it resets after a save but never wipes unsaved edits when
+  // the page merely re-renders.
+  const [f, setF] = useState(initial);
+  const submit = (e: FormEvent) => { e.preventDefault(); onSave(f); };
 
   return (
-    <div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer">
-          <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
-          Enabled
-        </label>
+    <form onSubmit={submit} className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="sm:col-span-2">
+          <label className="label">Schedule Name</label>
+          <input type="text" className="input text-sm" placeholder="e.g. Plant 4 monthly energy" required maxLength={255}
+            value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 cursor-pointer pb-2">
+            <input type="checkbox" checked={f.enabled} onChange={(e) => setF({ ...f, enabled: e.target.checked })} />
+            Enabled
+          </label>
+        </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div>
@@ -146,7 +177,14 @@ function ScheduleCard({ schedule, onSave, saving }: {
         </div>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {schedule.frequency === 'monthly' && (
+        <div>
+          <label className="label">Frequency</label>
+          <select value={f.frequency} onChange={(e) => setF({ ...f, frequency: e.target.value as ScheduleFields['frequency'] })} className="input text-sm">
+            <option value="daily">Daily</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </div>
+        {f.frequency === 'monthly' && (
           <div>
             <label className="label">Day of Month</label>
             <select value={f.send_day} onChange={(e) => setF({ ...f, send_day: Number(e.target.value) })} className="input text-sm">
@@ -160,44 +198,51 @@ function ScheduleCard({ schedule, onSave, saving }: {
         </div>
       </div>
       <p className="text-xs text-gray-500">
-        {whenLabel({ frequency: schedule.frequency, send_day: f.send_day, send_time: f.send_time })},
-        {schedule.frequency === 'daily' ? ' reporting the previous day.' : ' reporting the previous calendar month.'}
-        {' '}Days 29–31 aren't offered so the send date exists in every month. The email body includes a Plant 1 and Plant 4 summary; the report above is attached in full.
+        {whenLabel(f)},
+        {f.frequency === 'daily' ? ' reporting the previous day.' : ' reporting the previous calendar month.'}
+        {' '}Days 29–31 aren't offered so the send date exists in every month.
       </p>
-      <button onClick={() => onSave(f)} disabled={saving} className="btn-primary text-sm py-1.5 px-4">
-        {saving ? 'Saving…' : 'Save'}
-      </button>
-    </div>
+      <div className="flex gap-2">
+        <button type="submit" disabled={saving} className="btn-primary text-sm py-1.5 px-4">
+          {saving ? 'Saving…' : submitLabel}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="text-sm py-1.5 px-4 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700">
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 
-function RecipientList({ frequency }: { frequency: 'daily' | 'monthly' }) {
+function RecipientList({ schedule }: { schedule: ReportSchedule }) {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery({
-    queryKey: ['schedule-recipients', frequency],
-    queryFn: () => reportsApi.getScheduleRecipients(frequency).then((r) => r.data),
+    queryKey: ['schedule-recipients', schedule.id],
+    queryFn: () => reportsApi.getScheduleRecipients(schedule.id).then((r) => r.data),
   });
   const recipients: ReportScheduleRecipient[] = data?.recipients ?? [];
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['schedule-recipients', schedule.id] });
+    qc.invalidateQueries({ queryKey: ['report-schedules'] });
+  };
 
   const [form, setForm] = useState({ name: '', email: '' });
   const addMutation = useMutation({
-    mutationFn: () => reportsApi.addScheduleRecipient(frequency, { email: form.email, name: form.name || undefined }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['schedule-recipients', frequency] });
-      toast.success('Recipient added');
-      setForm({ name: '', email: '' });
-    },
+    mutationFn: () => reportsApi.addScheduleRecipient(schedule.id, { email: form.email, name: form.name || undefined }),
+    onSuccess: () => { refresh(); toast.success('Recipient added'); setForm({ name: '', email: '' }); },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Could not add recipient'),
   });
   const handleAdd = (e: FormEvent) => { e.preventDefault(); addMutation.mutate(); };
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => reportsApi.deleteScheduleRecipient(frequency, id),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['schedule-recipients', frequency] }); toast.success('Recipient removed'); },
+    mutationFn: (id: string) => reportsApi.deleteScheduleRecipient(schedule.id, id),
+    onSuccess: () => { refresh(); toast.success('Recipient removed'); },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
   });
   const handleDelete = (r: ReportScheduleRecipient) => {
-    if (confirm(`Remove ${r.email} from the ${frequency} report list?`)) deleteMutation.mutate(r.id);
+    if (confirm(`Remove ${r.email} from "${schedule.name}"?`)) deleteMutation.mutate(r.id);
   };
 
   return (
@@ -253,35 +298,53 @@ function RecipientList({ frequency }: { frequency: 'daily' | 'monthly' }) {
   );
 }
 
-export default function ReportSchedulesPage() {
-  const { isAdmin } = useAuth();
-  if (!isAdmin) return <Navigate to="/" replace />;
-
+function SchedulesManager() {
   const qc = useQueryClient();
-  const { data: schedulesData } = useQuery({
+  const { data: schedulesData, isLoading } = useQuery({
     queryKey: ['report-schedules'],
     queryFn: () => reportsApi.getSchedules().then((r) => r.data),
   });
   const schedules: ReportSchedule[] = schedulesData?.schedules ?? [];
-  const [sending, setSending] = useState<string | null>(null);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['report-schedules'] });
+  const [adding, setAdding] = useState(false);
+
+  const createMutation = useMutation({
+    mutationFn: (data: ScheduleFields) => reportsApi.createSchedule(data),
+    onSuccess: (res) => {
+      refresh(); setAdding(false);
+      toast.success('Schedule created — add its recipients below');
+      const id = res.data?.schedule?.id;
+      if (id) setTimeout(() => document.getElementById(`schedule-${id}`)?.scrollIntoView({ behavior: 'smooth' }), 300);
+    },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Could not create schedule'),
+  });
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: ScheduleFields }) => reportsApi.updateSchedule(id, data),
+    onSuccess: () => { refresh(); toast.success('Schedule saved'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Save failed'),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => reportsApi.deleteSchedule(id),
+    onSuccess: () => { refresh(); toast.success('Schedule deleted'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
+  });
   const sendNowMutation = useMutation({
-    mutationFn: (frequency: string) => { setSending(frequency); return reportsApi.sendScheduleNow(frequency); },
+    mutationFn: (id: string) => reportsApi.sendScheduleNow(id),
     onSuccess: (res) => {
       const { status, message } = res.data;
       if (status === 'sent') toast.success(message); else toast.error(`Not sent: ${message}`);
     },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Send failed'),
-    onSettled: () => { setSending(null); qc.invalidateQueries({ queryKey: ['report-schedules'] }); },
+    onSettled: refresh,
   });
-  const handleSendNow = (frequency: string) => {
-    if (confirm(`Send the ${frequency} report to its recipients now?`)) sendNowMutation.mutate(frequency);
-  };
 
-  const scheduleMutation = useMutation({
-    mutationFn: ({ frequency, data }: { frequency: string; data: object }) => reportsApi.updateSchedule(frequency, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['report-schedules'] }); toast.success('Schedule saved'); },
-    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Save failed'),
-  });
+  const handleSendNow = (s: ReportSchedule) => {
+    if (confirm(`Send "${s.name}" to its ${s.recipient_count} recipient(s) now?`)) sendNowMutation.mutate(s.id);
+  };
+  const handleDelete = (s: ReportSchedule) => {
+    if (confirm(`Delete the schedule "${s.name}"? Its ${s.recipient_count} recipient(s) are removed with it.`)) deleteMutation.mutate(s.id);
+  };
+  const busy = sendNowMutation.isPending || deleteMutation.isPending;
 
   return (
     <div className="space-y-5">
@@ -289,28 +352,48 @@ export default function ReportSchedulesPage() {
         <div className="flex items-center gap-2 mb-1">
           <Clock className="w-5 h-5 text-primary-600 dark:text-primary-400" />
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Report Schedules</h2>
+          {!adding && (
+            <button onClick={() => setAdding(true)} className="btn-primary text-sm py-1.5 px-3 flex items-center gap-1.5 ml-auto">
+              <Plus className="w-3.5 h-3.5" /> Add Schedule
+            </button>
+          )}
         </div>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          Configure the automated daily and monthly report emails. Each email body summarizes every plant section (e.g. P1, P4) separately, with the full report attached. Daily and monthly schedules have independent recipient lists.
+          Set up as many automated report emails as you need — e.g. a separate monthly report per plant. Each schedule has its own report type, plant, send day/time and recipient list. The email body summarizes Plant 1 and Plant 4, with the full report attached.
         </p>
       </div>
 
-      <SavedSchedulesTable schedules={schedules} onSendNow={handleSendNow} sending={sending} />
+      {adding && (
+        <div className="card space-y-3">
+          <h3 className="font-semibold text-gray-800 dark:text-gray-200">New Schedule</h3>
+          <ScheduleForm initial={NEW_SCHEDULE} submitLabel="Create Schedule" saving={createMutation.isPending}
+            onSave={(data) => createMutation.mutate(data)} onCancel={() => setAdding(false)} />
+        </div>
+      )}
 
-      {(['daily', 'monthly'] as const).map((freq) => {
-        const schedule = schedules.find((s) => s.frequency === freq);
-        return (
-          <div key={freq} id={`schedule-${freq}`} className="card space-y-4 scroll-mt-4">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{freq} Report</h3>
-            {schedule && (
-              <ScheduleCard schedule={schedule}
-                onSave={(data) => scheduleMutation.mutate({ frequency: freq, data })}
-                saving={scheduleMutation.isPending} />
-            )}
-            <RecipientList frequency={freq} />
+      <SavedSchedulesTable schedules={schedules} isLoading={isLoading} onSendNow={handleSendNow} onDelete={handleDelete} busy={busy} />
+
+      {schedules.map((s) => (
+        <div key={s.id} id={`schedule-${s.id}`} className="card space-y-4 scroll-mt-4">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200">{s.name}</h3>
+            <span className="text-xs text-gray-500 capitalize">· {s.frequency}</span>
+            <button onClick={() => handleDelete(s)} disabled={busy}
+              className="ml-auto text-xs flex items-center gap-1 px-2 py-1 rounded text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+              <Trash2 className="w-3.5 h-3.5" /> Delete schedule
+            </button>
           </div>
-        );
-      })}
+          <ScheduleForm key={`${s.id}:${s.updated_at}`} initial={fieldsOf(s)} submitLabel="Save" saving={updateMutation.isPending && updateMutation.variables?.id === s.id}
+            onSave={(data) => updateMutation.mutate({ id: s.id, data })} />
+          <RecipientList schedule={s} />
+        </div>
+      ))}
     </div>
   );
+}
+
+export default function ReportSchedulesPage() {
+  const { isAdmin } = useAuth();
+  if (!isAdmin) return <Navigate to="/" replace />;
+  return <SchedulesManager />;
 }

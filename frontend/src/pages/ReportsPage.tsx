@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { reportsApi, downloadBlob } from '../services/api';
 import { usePlant } from '../context/PlantContext';
+import { useAuth } from '../context/AuthContext';
 import { fmt } from '../utils/formatters';
-import { FileDown, FileText } from 'lucide-react';
+import { FileDown, FileText, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const REPORTS = [
@@ -25,6 +26,8 @@ const SECTIONS = [
 
 export default function ReportsPage() {
   const { selectedPlantId } = usePlant();
+  const { isAdmin } = useAuth();
+  const qc = useQueryClient();
   const [reportType, setReportType] = useState('energy_daily');
   const [section, setSection] = useState('');
   const [dateFrom, setDateFrom] = useState(
@@ -47,6 +50,15 @@ export default function ReportsPage() {
     },
     onError: (err: any) => toast.error(err.response?.data?.error ?? 'Failed'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => reportsApi.deleteHistory(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['report-history'] }); toast.success('Report removed from history'); },
+    onError: (err: any) => toast.error(err.response?.data?.error ?? 'Delete failed'),
+  });
+  const handleDelete = (r: any) => {
+    if (confirm(`Remove "${r.report_type?.replace(/_/g, ' ')}" (${fmt.datetime(r.created_at)}) from the history?`)) deleteMutation.mutate(r.id);
+  };
 
   const handleDownload = (format: 'excel' | 'pdf') => {
     genMutation.mutate({
@@ -142,7 +154,7 @@ export default function ReportsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
-                  {['Type', 'Plant', 'Period', 'Format', 'Generated'].map((h) => (
+                  {['Type', 'Plant', 'Period', 'Format', 'Generated', ...(isAdmin ? [''] : [])].map((h) => (
                     <th key={h} className="text-left px-4 py-3 text-xs text-gray-600 dark:text-gray-400 font-medium">
                       {h}
                     </th>
@@ -169,6 +181,15 @@ export default function ReportsPage() {
                     <td className="px-4 py-2.5 text-gray-600 dark:text-gray-400 text-xs whitespace-nowrap">
                       {fmt.datetime(r.created_at)}
                     </td>
+                    {isAdmin && (
+                      <td className="px-4 py-2.5 text-right">
+                        <button onClick={() => handleDelete(r)} disabled={deleteMutation.isPending}
+                          className="p-1.5 text-gray-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50"
+                          title="Delete from history">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

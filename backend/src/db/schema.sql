@@ -330,11 +330,12 @@ CREATE TABLE IF NOT EXISTS reports (
 );
 
 -- ============================================================
--- REPORT SCHEDULES (configurable auto-email daily/monthly report)
+-- REPORT SCHEDULES (any number of auto-emailed daily/monthly reports)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS report_schedules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  frequency VARCHAR(20) UNIQUE NOT NULL CHECK (frequency IN ('daily', 'monthly')),
+  name VARCHAR(255) NOT NULL,
+  frequency VARCHAR(20) NOT NULL CHECK (frequency IN ('daily', 'monthly')),
   enabled BOOLEAN DEFAULT true,
   report_type VARCHAR(50) NOT NULL DEFAULT 'consumption_summary',
   format VARCHAR(20) NOT NULL DEFAULT 'excel' CHECK (format IN ('excel', 'pdf')),
@@ -347,21 +348,22 @@ CREATE TABLE IF NOT EXISTS report_schedules (
   last_message TEXT,
   last_period VARCHAR(100),            -- human-readable period the last run covered
   updated_by UUID REFERENCES users(id),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Independent recipient list per frequency (daily/monthly) - not tied to
--- login accounts, since report recipients don't necessarily need app access.
+-- Independent recipient list per schedule - not tied to login accounts,
+-- since report recipients don't necessarily need app access.
 CREATE TABLE IF NOT EXISTS report_schedule_recipients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  frequency VARCHAR(20) NOT NULL CHECK (frequency IN ('daily', 'monthly')),
+  schedule_id UUID NOT NULL REFERENCES report_schedules(id) ON DELETE CASCADE,
   email VARCHAR(255) NOT NULL,
   name VARCHAR(255),
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE (frequency, email)
+  UNIQUE (schedule_id, email)
 );
 
-CREATE INDEX IF NOT EXISTS idx_rsr_frequency ON report_schedule_recipients (frequency);
+CREATE INDEX IF NOT EXISTS idx_rsr_schedule ON report_schedule_recipients (schedule_id);
 
 -- ============================================================
 -- DEVICE OFFLINE MONITORING

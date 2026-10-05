@@ -74,14 +74,17 @@ export const deviceSetpointsApi = {
 export const reportsApi = {
   generate: (data: object) => api.post('/reports/generate', data, { responseType: 'blob' }),
   getHistory: () => api.get('/reports/history'),
+  deleteHistory: (id: string) => api.delete(`/reports/history/${id}`),
   getSchedules: () => api.get('/reports/schedules'),
-  updateSchedule: (frequency: string, data: object) => api.put(`/reports/schedules/${frequency}`, data),
-  sendScheduleNow: (frequency: string) => api.post(`/reports/schedules/${frequency}/send-now`),
-  getScheduleRecipients: (frequency: string) => api.get(`/reports/schedules/${frequency}/recipients`),
-  addScheduleRecipient: (frequency: string, data: { email: string; name?: string }) =>
-    api.post(`/reports/schedules/${frequency}/recipients`, data),
-  deleteScheduleRecipient: (frequency: string, id: string) =>
-    api.delete(`/reports/schedules/${frequency}/recipients/${id}`),
+  createSchedule: (data: object) => api.post('/reports/schedules', data),
+  updateSchedule: (id: string, data: object) => api.put(`/reports/schedules/${id}`, data),
+  deleteSchedule: (id: string) => api.delete(`/reports/schedules/${id}`),
+  sendScheduleNow: (id: string) => api.post(`/reports/schedules/${id}/send-now`),
+  getScheduleRecipients: (id: string) => api.get(`/reports/schedules/${id}/recipients`),
+  addScheduleRecipient: (id: string, data: { email: string; name?: string }) =>
+    api.post(`/reports/schedules/${id}/recipients`, data),
+  deleteScheduleRecipient: (id: string, recipientId: string) =>
+    api.delete(`/reports/schedules/${id}/recipients/${recipientId}`),
   getTariffReport: (params?: object) => api.get('/reports/tariff', { params }),
   getGeneratorAnalysis: (params?: object) => api.get('/reports/generator-analysis', { params }),
 };
