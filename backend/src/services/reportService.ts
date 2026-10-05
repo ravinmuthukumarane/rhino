@@ -221,6 +221,14 @@ async function addInterruptionSheets(wb: ExcelJS.Workbook, groupBy: 'day' | 'mon
   await buildInterruptions(start, end, plantId, section, wb);
 }
 
+// Standalone Daily / Monthly Power Interruption reports - the same
+// summary + event-list sheets the energy reports carry.
+async function buildInterruptionReport(groupBy: 'day' | 'month', start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook();
+  await addInterruptionSheets(wb, groupBy, start, end, plantId, section);
+  return wb;
+}
+
 async function buildConsumptionSummary(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   const [eRows, dRows] = await Promise.all([
@@ -256,6 +264,9 @@ async function generate(input: GenerateReportInput): Promise<{ buffer: Buffer; f
     case 'diesel_daily':      wb = await buildDiesel(start, end, 'day', input.plantId, input.section); break;
     case 'diesel_monthly':    wb = await buildDiesel(start, end, 'month', input.plantId, input.section); break;
     case 'power_quality':     wb = await buildPowerQuality(start, end, input.plantId, input.meterId, input.section); break;
+    case 'power_interruption_daily':   wb = await buildInterruptionReport('day', start, end, input.plantId, input.section); break;
+    case 'power_interruption_monthly': wb = await buildInterruptionReport('month', start, end, input.plantId, input.section); break;
+    // Legacy undivided type - no longer offered, kept so old links/history still work.
     case 'power_interruption':wb = await buildInterruptions(start, end, input.plantId, input.section); break;
     case 'consumption_summary': wb = await buildConsumptionSummary(start, end, input.plantId, input.section); break;
     case 'all_combined':       wb = await buildAllCombined(start, end, input.plantId, input.section); break;

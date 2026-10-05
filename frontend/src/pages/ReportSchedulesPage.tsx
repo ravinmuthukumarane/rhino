@@ -14,7 +14,8 @@ const REPORTS = [
   { value: 'diesel_daily',        label: 'Daily Diesel Consumption' },
   { value: 'diesel_monthly',      label: 'Monthly Diesel Consumption' },
   { value: 'power_quality',       label: 'Power Quality Report' },
-  { value: 'power_interruption',  label: 'Power Interruption Report' },
+  { value: 'power_interruption_daily',   label: 'Daily Power Interruption Report' },
+  { value: 'power_interruption_monthly', label: 'Monthly Power Interruption Report' },
   { value: 'consumption_summary', label: 'Full Consumption Summary' },
   { value: 'all_combined',        label: 'All Reports (multi-tab)' },
 ];

@@ -11,6 +11,7 @@ const REPORT_LABELS: Record<string, string> = {
   energy_daily: 'Daily Energy Consumption', energy_monthly: 'Monthly Energy Consumption',
   diesel_daily: 'Daily Diesel Consumption', diesel_monthly: 'Monthly Diesel Consumption',
   power_quality: 'Power Quality', power_interruption: 'Power Interruption',
+  power_interruption_daily: 'Daily Power Interruption', power_interruption_monthly: 'Monthly Power Interruption',
   consumption_summary: 'Consumption Summary', all_combined: 'All Reports (multi-tab)',
 };
 
