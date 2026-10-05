@@ -3,6 +3,7 @@ import { Alert } from '../types';
 import { SectionSummary } from './plantSectionSummaryService';
 import { formatISTDateTime } from '../utils/timeUtils';
 import type { MonitoredDevice } from './deviceMonitorService';
+import { hm, type InterruptionSummaryRow } from './reportService';
 
 const FROM = process.env.EMAIL_FROM ?? 'Energy Monitor <noreply@example.com>';
 const UI = process.env.FRONTEND_URL ?? 'http://localhost:3000';
@@ -108,7 +109,8 @@ async function sendAlert(alert: Alert, adminEmails: string[]): Promise<void> {
 async function sendScheduledReport(
   emails: string[], frequency: 'daily' | 'monthly', reportLabel: string, periodLabel: string,
   buffer: Buffer, filename: string, contentType: string,
-  sections: SectionSummary[] = []
+  sections: SectionSummary[] = [],
+  interruptions: InterruptionSummaryRow[] = []
 ): Promise<void> {
   if (!emails.length) { console.log(`[EMAIL SKIPPED] ${frequency} report — no recipients`); return; }
   if (!process.env.SMTP_USER) { console.log(`[EMAIL SKIPPED] ${frequency} report — no SMTP`); return; }
@@ -126,12 +128,30 @@ async function sendScheduledReport(
       ${row('Generator Run Hours', n(s.generator_run_hours))}
     </table>`;
 
+  // Power interruptions per plant for the period - in every scheduled email,
+  // whatever report is attached.
+  const cell = 'padding:8px 10px;border-bottom:1px solid #e5e7eb;font-size:13px;';
+  const head = 'padding:8px 10px;background:#fef2f2;border-bottom:1px solid #e5e7eb;color:#991b1b;font-size:12px;font-weight:bold;';
+  const interruptionBlock = interruptions.length ? `
+    <p style="margin:18px 0 6px;font-weight:bold;color:#991b1b;">Power Interruptions</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 18px;">
+      <tr>${['Plant', 'Interruptions', 'Total Downtime', 'Longest', 'Status'].map((h) => `<td style="${head}">${h}</td>`).join('')}</tr>
+      ${interruptions.map((r) => `<tr>
+        <td style="${cell}font-weight:bold;">${sectionLabel(r.plant_section)}</td>
+        <td style="${cell}">${r.count}</td>
+        <td style="${cell}">${hm(r.total_minutes)}</td>
+        <td style="${cell}">${r.count ? hm(r.longest_minutes) : '—'}</td>
+        <td style="${cell}">${r.ongoing ? '<b style="color:#dc2626;">Ongoing</b>' : r.count ? 'Restored' : 'No interruptions'}</td>
+      </tr>`).join('')}
+    </table>` : '';
+
   await transporter.sendMail({
     from: FROM, to: emails.join(','),
     subject: `${frequency === 'daily' ? 'Daily' : 'Monthly'} Report – ${reportLabel} – Energy Monitor`,
     html: layout(`${frequency === 'daily' ? 'Daily' : 'Monthly'} report – ${periodLabel}`, `
       <p>Summary for <b>${periodLabel}</b>, by plant section:</p>
       ${sections.length ? sections.map(sectionBlock).join('') : '<p style="color:#6b7280;">No section data available for this period.</p>'}
+      ${interruptionBlock}
       <p>Full detail attached as <b>${reportLabel}</b>.</p>
       <p style="color:#6b7280;font-size:13px;">Attached as <span style="font-family:monospace;">${filename}</span></p>`),
     attachments: [{ filename, content: buffer, contentType }],

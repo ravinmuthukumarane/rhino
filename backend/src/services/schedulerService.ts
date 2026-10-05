@@ -58,9 +58,10 @@ export async function runScheduledReport(scheduleId: string, slot: Date, manual 
     );
 
     const sections = await plantSectionSummaryService.getSectionSummaries(start, end);
+    const interruptions = await reportService.interruptionSummary('total', start, end);
     const plantLabel = sched.plant_section === 'P1' ? 'Plant 1' : sched.plant_section === 'P4' ? 'Plant 4' : (sched.plant_section || 'All Plants (Plant 1 + Plant 4)');
     const label = `${REPORT_LABELS[sched.report_type] ?? sched.report_type} – ${plantLabel}`;
-    await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections);
+    await emailService.sendScheduledReport(emails, frequency, label, periodLabel, buffer, filename, contentType, sections, interruptions);
     console.log(`[Scheduler] "${sched.name}" sent to ${emails.join(', ')}`);
     return record('sent', `Sent to ${emails.length} recipient${emails.length > 1 ? 's' : ''}`);
   } catch (err) {

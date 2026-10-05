@@ -74,6 +74,7 @@ async function buildEnergyDaily(start: string, end: string, plantId?: string, me
   );
   const ws = sheetWithTitle(wb, 'Daily Energy', 'Daily Energy Consumption', { section, start, end }, ['Date','Plant','Meter','Total kWh','Max kVA','Avg PF','Avg Voltage','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh','Interruptions']);
   rows.forEach((r) => ws.addRow([fmtDate(r.summary_date),sectionLabel(r.plant_section,r.plant_name),r.meter_id,n(r.total_kwh),n(r.max_kva),pf(r.avg_power_factor),n(r.avg_voltage,1),n(r.ceb_kwh),n(r.generator_kwh),n(r.day_kwh),n(r.peak_kwh),n(r.off_peak_kwh),r.interruption_count]));
+  await addInterruptionSheets(wb, 'day', start, end, plantId, section);
   return wb;
 }
 
@@ -95,6 +96,7 @@ async function buildEnergyMonthly(start: string, end: string, plantId?: string, 
   const wb = new ExcelJS.Workbook();
   const ws = sheetWithTitle(wb, 'Monthly Energy', 'Monthly Energy Consumption', { section, start, end }, ['Month','Plant','Meter','Total kWh','Max kVA','Avg PF','CEB kWh','Gen kWh','Day kWh','Peak kWh','Off-Peak kWh']);
   rows.forEach((r) => ws.addRow([formatISTDate(r.month,{year:'numeric',month:'long'}),sectionLabel(r.plant_section,r.plant_name),r.meter_id,r.total_kwh,r.max_kva,pf(r.avg_pf),r.ceb_kwh,r.gen_kwh,r.day_kwh,r.peak_kwh,r.off_peak_kwh]));
+  await addInterruptionSheets(wb, 'month', start, end, plantId, section);
   return wb;
 }
 
@@ -142,6 +144,83 @@ async function buildInterruptions(start: string, end: string, plantId?: string, 
   return wb;
 }
 
+// "1 h 24 min" - downtime totals read better than raw minutes.
+export function hm(mins: number): string {
+  const m = Math.round(mins);
+  if (m <= 0) return '0 min';
+  const h = Math.floor(m / 60);
+  return h ? `${h} h ${m % 60} min` : `${m} min`;
+}
+
+export interface InterruptionSummaryRow {
+  period: Date | null; plant_section: string; count: number; total_minutes: number;
+  longest_minutes: number; days_affected: number; generator_count: number; ongoing: boolean;
+}
+
+// Power interruptions rolled up per plant - per day, per month, or one row
+// per plant for the whole period ('total'). Every plant gets a row in every
+// bucket, including 0, so "no interruptions" is stated rather than implied by
+// an empty table. An interruption counts toward the IST day/month it started
+// in; one still ongoing counts its duration up to now (or the period end).
+async function interruptionSummary(groupBy: 'day' | 'month' | 'total', start: string, end: string, plantId?: string, section?: string): Promise<InterruptionSummaryRow[]> {
+  const bucketOf = (col: string) => groupBy === 'total' ? '$1::date' : `date_trunc('${groupBy}', ${col})::date`;
+  const periods = groupBy === 'total'
+    // $2 must appear in the query even here, or Postgres can't infer its type.
+    ? 'SELECT $1::date AS p, $2::date AS period_end'
+    : `SELECT generate_series(date_trunc('${groupBy}', $1::date), $2::date, '1 ${groupBy}')::date AS p`;
+  const { rows } = await pool.query(
+    `WITH periods AS (${periods}),
+     secs AS (
+       SELECT DISTINCT plant_section AS s FROM generators
+       WHERE plant_section IS NOT NULL AND ($3::text IS NULL OR plant_section = $3)
+     ),
+     ev AS (
+       SELECT ${bucketOf("pi.started_at AT TIME ZONE 'Asia/Colombo'")} AS p,
+              (pi.started_at AT TIME ZONE 'Asia/Colombo')::date AS d,
+              COALESCE(em.plant_section, g.plant_section) AS s,
+              COALESCE(pi.duration_minutes, EXTRACT(EPOCH FROM (LEAST(NOW(), $5::timestamptz) - pi.started_at)) / 60) AS mins,
+              pi.generator_activated AS gen, pi.restored_at IS NULL AS ongoing
+       FROM power_interruptions pi
+       LEFT JOIN energy_meters em ON em.meter_id = pi.meter_id
+       LEFT JOIN generators g ON g.generator_id = pi.meter_id
+       WHERE pi.started_at >= $4 AND pi.started_at < $5 AND ($6::uuid IS NULL OR pi.plant_id = $6)
+     )
+     SELECT periods.p, secs.s, COUNT(ev.d)::int AS n, COALESCE(SUM(ev.mins), 0)::float AS total,
+            COALESCE(MAX(ev.mins), 0)::float AS longest, COUNT(DISTINCT ev.d)::int AS days,
+            (COUNT(ev.d) FILTER (WHERE ev.gen))::int AS gen_n, COALESCE(bool_or(ev.ongoing), false) AS ongoing
+     FROM periods CROSS JOIN secs
+     LEFT JOIN ev ON ev.p = periods.p AND ev.s = secs.s
+     GROUP BY periods.p, secs.s ORDER BY secs.s, periods.p`,
+    [start, end, section ?? null, startOfDayIST(start), endOfDayExclusiveIST(end), plantId ?? null]
+  );
+  return rows.map((r) => ({
+    period: groupBy === 'total' ? null : r.p, plant_section: r.s, count: r.n, total_minutes: r.total,
+    longest_minutes: r.longest, days_affected: r.days, generator_count: r.gen_n, ongoing: r.ongoing,
+  }));
+}
+
+// Adds a "Power Interruptions" summary sheet (per day or per month, per plant,
+// with a TOTAL row per plant) plus the event list, to an energy report.
+async function addInterruptionSheets(wb: ExcelJS.Workbook, groupBy: 'day' | 'month', start: string, end: string, plantId?: string, section?: string): Promise<void> {
+  const rows = await interruptionSummary(groupBy, start, end, plantId, section);
+  const daily = groupBy === 'day';
+  const ws = sheetWithTitle(wb, 'Power Interruptions', daily ? 'Daily Power Interruptions' : 'Monthly Power Interruptions', { section, start, end },
+    [daily ? 'Date' : 'Month', 'Plant', 'Interruptions', 'Days Affected', 'Total Downtime', 'Longest', 'Generator Used', 'Status']);
+  const status = (r: { count: number; ongoing: boolean }) => r.ongoing ? 'Ongoing' : r.count ? 'Restored' : 'No interruptions';
+  const totals: Record<string, { count: number; total: number; longest: number; days: number; gen: number }> = {};
+  for (const r of rows) {
+    const t = (totals[r.plant_section] ??= { count: 0, total: 0, longest: 0, days: 0, gen: 0 });
+    t.count += r.count; t.total += r.total_minutes; t.longest = Math.max(t.longest, r.longest_minutes);
+    t.days += r.days_affected; t.gen += r.generator_count;
+    const label = daily ? fmtDate(r.period) : formatISTDate(`${r.period!.toISOString().slice(0, 10)}T00:00:00+05:30`, { year: 'numeric', month: 'long' });
+    ws.addRow([label, sectionLabel(r.plant_section), r.count, r.days_affected, hm(r.total_minutes), r.count ? hm(r.longest_minutes) : '—', r.generator_count, status(r)]);
+  }
+  for (const [s, t] of Object.entries(totals)) {
+    ws.addRow(['TOTAL', sectionLabel(s), t.count, t.days, hm(t.total), t.count ? hm(t.longest) : '—', t.gen, '']).font = { bold: true };
+  }
+  await buildInterruptions(start, end, plantId, section, wb);
+}
+
 async function buildConsumptionSummary(start: string, end: string, plantId?: string, section?: string): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
   const [eRows, dRows] = await Promise.all([
@@ -160,7 +239,7 @@ async function buildAllCombined(start: string, end: string, plantId?: string, se
   await buildEnergyDaily(start, end, plantId, undefined, section, wb);
   await buildDiesel(start, end, 'day', plantId, section, wb);
   await buildPowerQuality(start, end, plantId, undefined, section, wb);
-  await buildInterruptions(start, end, plantId, section, wb);
+  // Interruption sheets come with the Daily Energy tab above.
   return wb;
 }
 
@@ -235,4 +314,4 @@ async function buildPDF(wb: ExcelJS.Workbook, type: string, start: string, end: 
   });
 }
 
-export const reportService = { generate };
+export const reportService = { generate, interruptionSummary };
